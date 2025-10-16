@@ -35,4 +35,12 @@ return [
         ],
     ],
 
+    'google' => [
+        'places_key' => env('GOOGLE_PLACES_KEY'),
+    ],
+
+    'reco' => [
+        'url' => env('RECO_SERVICE_URL', 'http://localhost:8001'),
+    ],
+
 ];

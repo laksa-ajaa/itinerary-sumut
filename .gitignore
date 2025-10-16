@@ -22,3 +22,9 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+# Python virtualenvs
+/.venv
+/reco_service/.venv
+venv
+*/.venv
+*/venv
