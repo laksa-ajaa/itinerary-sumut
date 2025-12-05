@@ -9,7 +9,7 @@ class PlaceController extends Controller
 {
     public function index()
     {
-        return Place::with(['categories:id,name', 'facilities:id,name'])->paginate(20);
+        return Place::with(['categories:id,name'])->paginate(20);
     }
 
     public function store(Request $request)
@@ -34,7 +34,7 @@ class PlaceController extends Controller
 
     public function show(Place $place)
     {
-        return $place->load(['categories:id,name', 'facilities:id,name']);
+        return $place->load(['categories:id,name']);
     }
 
     public function update(Request $request, Place $place)

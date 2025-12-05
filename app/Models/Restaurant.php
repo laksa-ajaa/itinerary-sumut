@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
-class Place extends Model
+class Restaurant extends Model
 {
     use HasFactory, HasUuids;
 
@@ -19,10 +19,10 @@ class Place extends Model
         'source',
         'name',
         'kind',
-        'description',
         'latitude',
         'longitude',
         'rating',
+        'rating_avg',
         'rating_count',
         'city',
         'address',
@@ -32,14 +32,6 @@ class Place extends Model
     protected $casts = [
         'tags' => 'array',
     ];
-
-    public function categories()
-    {
-        return $this->belongsToMany(Category::class, 'place_category', 'place_id', 'category_id');
-    }
-
-    public function ratings()
-    {
-        return $this->hasMany(UserRating::class, 'place_id');
-    }
 }
+
+

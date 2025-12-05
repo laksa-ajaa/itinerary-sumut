@@ -2,19 +2,15 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Category extends Model
 {
-    use HasFactory;
-
-    protected $fillable = ['name'];
+    protected $fillable = ['slug', 'name', 'emoji'];
+    public $timestamps = true;
 
     public function places()
     {
-        return $this->belongsToMany(Place::class, 'place_category');
+        return $this->belongsToMany(Place::class, 'place_category', 'category_id', 'place_id');
     }
 }
-
-

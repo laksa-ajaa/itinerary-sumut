@@ -34,19 +34,6 @@ php artisan config:clear
 php artisan migrate --force
 ```
 
-### Impor Data Google Places
-Command: `places:import <lat> <lng> [--radius=3000] [--type=restaurant|lodging|tourist_attraction|...] [--language=id]`
-
-Contoh (Medan):
-```
-php artisan places:import 3.595195 98.672223 --radius=3000 --type=tourist_attraction --language=id
-php artisan places:import 3.595195 98.672223 --radius=3000 --type=restaurant --language=id
-php artisan places:import 3.595195 98.672223 --radius=3000 --type=lodging --language=id
-```
-Catatan:
-- Data disimpan ke tabel `places` (unik per `google_place_id`).
-- Kolom `places.kind` otomatis diisi: `restaurant`, `lodging`, `attraction`, dll.
-
 ### Service Rekomendasi (Python)
 Lokasi: `reco_service/`
 
