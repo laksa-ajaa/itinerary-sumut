@@ -52,14 +52,21 @@
                 <label for="start_location" class="block text-sm font-medium text-gray-700 mb-2">
                     Lokasi Mulai Perjalanan
                 </label>
-                <input type="text" name="start_location" id="start_location"
+                <input type="text" name="start_location" id="start_location" readonly
                     value="{{ old('start_location', 'Medan, Sumatera Utara') }}"
-                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:outline-none mb-3"
-                    placeholder="Contoh: Medan, Sumatera Utara">
-                <p class="text-xs text-gray-500 mb-3">Kamu bisa klik pada peta untuk mengatur titik koordinat mulai
+                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:outline-none mb-3 bg-gray-50 cursor-not-allowed"
+                    placeholder="Klik peta atau gunakan GPS">
+                <p class="text-xs text-gray-500 mb-3">Klik peta atau tombol GPS untuk mengatur titik koordinat mulai
                     perjalanan.</p>
 
                 <div id="start-map" class="w-full h-64 rounded-lg border border-gray-200"></div>
+                <div class="flex items-center gap-3 mt-3">
+                    <button type="button" id="use-my-location"
+                        class="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition">
+                        Gunakan GPS Saya
+                    </button>
+                    <span id="location-status" class="text-xs text-gray-500"></span>
+                </div>
 
                 <input type="hidden" name="start_lat" id="start_lat" value="{{ old('start_lat', '3.595195') }}">
                 <input type="hidden" name="start_lng" id="start_lng" value="{{ old('start_lng', '98.672223') }}">
@@ -201,6 +208,25 @@
     <script>
         (function() {
             // Initialize Leaflet Map
+            let mapInstance = null;
+            let markerInstance = null;
+
+            function updateLatLng(latlng) {
+                const latInput = document.getElementById('start_lat');
+                const lngInput = document.getElementById('start_lng');
+                const startInput = document.getElementById('start_location');
+                if (!latInput || !lngInput) return;
+
+                latInput.value = latlng.lat.toFixed(6);
+                lngInput.value = latlng.lng.toFixed(6);
+                if (startInput) {
+                    startInput.value = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
+                }
+                if (markerInstance) {
+                    markerInstance.setLatLng(latlng);
+                }
+            }
+
             function initMap() {
                 if (typeof L === 'undefined') {
                     console.log('Waiting for Leaflet...');
@@ -228,29 +254,22 @@
                 console.log('Initializing map at:', lat, lng);
 
                 try {
-                    const map = L.map('start-map').setView([lat, lng], 11);
+                    mapInstance = L.map('start-map').setView([lat, lng], 11);
 
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         maxZoom: 19,
                         attribution: '&copy; OpenStreetMap contributors'
-                    }).addTo(map);
+                    }).addTo(mapInstance);
 
-                    let marker = L.marker([lat, lng], {
+                    markerInstance = L.marker([lat, lng], {
                         draggable: true
-                    }).addTo(map);
+                    }).addTo(mapInstance);
 
-                    function updateLatLng(latlng) {
-                        latInput.value = latlng.lat.toFixed(6);
-                        lngInput.value = latlng.lng.toFixed(6);
-                        console.log('Coordinates updated:', latlng.lat, latlng.lng);
-                    }
-
-                    marker.on('dragend', function(e) {
+                    markerInstance.on('dragend', function(e) {
                         updateLatLng(e.target.getLatLng());
                     });
 
-                    map.on('click', function(e) {
-                        marker.setLatLng(e.latlng);
+                    mapInstance.on('click', function(e) {
                         updateLatLng(e.latlng);
                     });
 
@@ -258,6 +277,51 @@
                 } catch (error) {
                     console.error('Error initializing map:', error);
                 }
+            }
+
+            function useGeolocation() {
+                const statusEl = document.getElementById('location-status');
+                const buttonEl = document.getElementById('use-my-location');
+                const startInput = document.getElementById('start_location');
+
+                if (!statusEl || !buttonEl) return;
+
+                if (!navigator.geolocation) {
+                    statusEl.textContent = 'GPS tidak didukung di browser ini.';
+                    return;
+                }
+
+                statusEl.textContent = 'Mengambil lokasi...';
+                buttonEl.disabled = true;
+                buttonEl.classList.add('opacity-70', 'cursor-not-allowed');
+
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    console.log('Geolocation success:', lat, lng);
+
+                    if (mapInstance) {
+                        mapInstance.setView([lat, lng], 13);
+                    }
+                    updateLatLng({ lat, lng });
+                    statusEl.textContent = 'Lokasi GPS berhasil diambil.';
+                    buttonEl.disabled = false;
+                    buttonEl.classList.remove('opacity-70', 'cursor-not-allowed');
+                }, function(error) {
+                    console.error('Geolocation error:', error);
+                    statusEl.textContent = 'Gagal mendapatkan lokasi. Izinkan GPS atau coba lagi.';
+                    buttonEl.disabled = false;
+                    buttonEl.classList.remove('opacity-70', 'cursor-not-allowed');
+                }, {
+                    enableHighAccuracy: true,
+                    timeout: 10000
+                });
+            }
+
+            function initLocationButton() {
+                const buttonEl = document.getElementById('use-my-location');
+                if (!buttonEl) return;
+                buttonEl.addEventListener('click', useGeolocation);
             }
 
             // Initialize Flatpickr Date Range Picker
@@ -336,10 +400,12 @@
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', function() {
                     initMap();
+                    initLocationButton();
                     initDatePicker();
                 });
             } else {
                 initMap();
+                initLocationButton();
                 initDatePicker();
             }
         })();

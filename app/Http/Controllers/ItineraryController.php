@@ -50,6 +50,8 @@ class ItineraryController extends Controller
         $endDate = $validated['end_date'] ?? null;
         $budgetLevel = $validated['budget_level'] ?? 'sedang';
         $activityLevel = $validated['activity_level'] ?? 'normal';
+        $placesPerDay = $this->getPlacesPerDay($activityLevel);
+        $placeSelectionLimit = $durationDays * $placesPerDay;
         $startLocation = $validated['start_location'] ?? null;
         $startLat = $validated['start_lat'] ?? null;
         $startLng = $validated['start_lng'] ?? null;
@@ -69,14 +71,16 @@ class ItineraryController extends Controller
             ->get();
 
         // Rekomendasi sederhana: ambil yang teratas dari hasil filter
-        $recommendedPlaces = $places->sortByDesc('rating_avg')->take(6);
+        $recommendedPlaces = $places->take(6)->values();
+        $recommendedPlaceIds = $recommendedPlaces->pluck('id')->toArray();
+        $nonRecommendedPlaces = $places->whereNotIn('id', $recommendedPlaceIds)->values();
 
         $categories = collect(PlaceCategoryHelper::getCategories())
             ->whereIn('slug', $categorySlugs)
             ->values();
 
         return view('pages.itinerary.places', [
-            'places' => $places,
+            'places' => $nonRecommendedPlaces,
             'recommendedPlaces' => $recommendedPlaces,
             'categories' => $categories,
             'categorySlugs' => $categorySlugs,
@@ -85,6 +89,8 @@ class ItineraryController extends Controller
             'endDate' => $endDate,
             'budgetLevel' => $budgetLevel,
             'activityLevel' => $activityLevel,
+            'placeSelectionLimit' => $placeSelectionLimit,
+            'placesPerDay' => $placesPerDay,
             'startLocation' => $startLocation,
             'startLat' => $startLat,
             'startLng' => $startLng,
@@ -222,6 +228,15 @@ class ItineraryController extends Controller
                 ->withInput()
                 ->with('warning', "Untuk {$validated['duration_days']} hari dengan aktivitas {$activityLevel}, minimal dibutuhkan {$minPlacesNeeded} tempat. Saat ini hanya tersedia {$selectedPlaces->count()} tempat.");
         }
+        $maxPlacesAllowed = $this->calculateMaxPlacesAllowed(
+            $validated['duration_days'],
+            $activityLevel
+        );
+        if ($selectedPlaces->count() > $maxPlacesAllowed) {
+            return redirect()->back()
+                ->withInput()
+                ->with('warning', "Untuk {$validated['duration_days']} hari dengan aktivitas {$activityLevel}, maksimal {$maxPlacesAllowed} tempat. Anda memilih {$selectedPlaces->count()} tempat.");
+        }
         $userId = Auth::id();
         $categories = collect(PlaceCategoryHelper::getCategories())
             ->whereIn('slug', $categorySlugs)
@@ -307,6 +322,17 @@ class ItineraryController extends Controller
             ], 422);
         }
 
+        $maxPlacesAllowed = $this->calculateMaxPlacesAllowed(
+            $validated['duration_days'],
+            $activityLevel
+        );
+
+        if ($selectedPlaces->count() > $maxPlacesAllowed) {
+            return response()->json([
+                'message' => "Untuk {$validated['duration_days']} hari dengan aktivitas {$activityLevel}, maksimal {$maxPlacesAllowed} tempat. Anda memilih {$selectedPlaces->count()} tempat."
+            ], 422);
+        }
+
         $categories = collect(PlaceCategoryHelper::getCategories())
             ->whereIn('slug', $categorySlugs)
             ->values();
@@ -338,13 +364,24 @@ class ItineraryController extends Controller
      */
     private function calculateMinPlacesNeeded(int $durationDays, string $activityLevel): int
     {
-        $placesPerDay = match ($activityLevel) {
+        $placesPerDay = $this->getPlacesPerDay($activityLevel);
+        return $durationDays * $placesPerDay;
+    }
+
+    private function calculateMaxPlacesAllowed(int $durationDays, string $activityLevel): int
+    {
+        $placesPerDay = $this->getPlacesPerDay($activityLevel);
+        return $durationDays * $placesPerDay;
+    }
+
+    private function getPlacesPerDay(string $activityLevel): int
+    {
+        return match ($activityLevel) {
             'santai' => 2,
             'normal' => 3,
             'padat' => 5,
             default => 3,
         };
-        return $durationDays * $placesPerDay;
     }
     /**
      * Save generated itinerary to database
