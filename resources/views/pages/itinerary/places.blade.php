@@ -36,15 +36,9 @@
                     </span>
                 @endif
 
-                @if (!empty($budgetLevel))
-                    <span class="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium">
-                        Budget: {{ ucfirst($budgetLevel) }}
-                    </span>
-                @endif
-
-                @if (!empty($activityLevel))
+                @if (!empty($startTime))
                     <span class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
-                        Aktivitas: {{ ucfirst($activityLevel) }}
+                        Jam Berangkat: {{ $startTime }}
                     </span>
                 @endif
             </div>
@@ -99,11 +93,8 @@
             @if (!empty($durationDays))
                 <input type="hidden" name="duration_days" value="{{ $durationDays }}">
             @endif
-            @if (!empty($budgetLevel))
-                <input type="hidden" name="budget_level" value="{{ $budgetLevel }}">
-            @endif
-            @if (!empty($activityLevel))
-                <input type="hidden" name="activity_level" value="{{ $activityLevel }}">
+            @if (!empty($startTime))
+                <input type="hidden" name="start_time" value="{{ $startTime }}">
             @endif
             @if (!empty($startDate))
                 <input type="hidden" name="start_date" value="{{ $startDate }}">
@@ -112,205 +103,181 @@
                 <input type="hidden" name="end_date" value="{{ $endDate }}">
             @endif
 
-            @if (!empty($placeSelectionLimit))
-                <div class="mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                    <div class="text-sm text-gray-600">
-                        Batas sesuai aktivitas: maksimal {{ $placeSelectionLimit }} tempat
-                        ({{ $placesPerDay ?? 0 }} / hari).
-                    </div>
-                    <div id="selection-limit-info" class="text-sm font-semibold text-green-700"></div>
-                </div>
-            @endif
-
             {{-- Action Buttons (Top) --}}
             <div class="flex justify-between gap-4 mb-6">
                 <a href="{{ route('itinerary.preferences') }}"
                     class="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">
                     ← Kembali
                 </a>
-                @if ($places->count() > 0 || (isset($recommendedPlaces) && $recommendedPlaces->count() > 0))
-                    <button type="submit" form="placesForm"
-                        class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold">
-                        Lanjutkan →
-                    </button>
-                @endif
             </div>
 
-            {{-- Recommended Places (Hybrid) --}}
-            @if (isset($recommendedPlaces) && $recommendedPlaces->count() > 0)
-                <div class="mb-6 bg-white rounded-lg shadow-lg p-8">
-                    <h2 class="text-lg font-semibold text-gray-900 mb-4">
-                        Rekomendasi Utama
-                    </h2>
-                    <p class="text-sm text-gray-500 mb-4">
-                        Dipilih otomatis berdasarkan preferensi dan data pengguna lain yang mirip.
-                    </p>
+            {{-- Info Box --}}
+            <div class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p class="text-blue-800 text-sm">
+                    <strong>Petunjuk:</strong> Pilih tingkat aktivitas dan tempat wisata untuk setiap hari perjalanan Anda.
+                    <br>
+                    <strong>Santai:</strong> 1-3 wisata | <strong>Normal:</strong> 4-5 wisata | <strong>Padat:</strong> 5+
+                    wisata
+                </p>
+            </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        @foreach ($recommendedPlaces as $place)
-                            <label
-                                class="flex flex-col p-4 border-2 border-green-400 bg-green-50 rounded-lg cursor-pointer hover:border-green-500 hover:bg-green-100 transition">
-                                <div class="flex items-start">
-                                    <input type="checkbox" name="place_ids[]" value="{{ $place->id }}"
-                                        class="mt-1 w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
-                                        checked>
-                                    <div class="ml-3 flex-1">
-                                        <h3 class="font-semibold text-gray-900 mb-1">{{ $place->name }}</h3>
-                                        <span
-                                            class="inline-block px-2 py-1 bg-green-100 text-green-700 text-xs rounded mb-2">
-                                            🔮 Rekomendasi Sistem
-                                        </span>
-                                        @if ($place->description)
-                                            <p class="text-sm text-gray-600 mb-2 line-clamp-2">
-                                                {{ $place->description }}</p>
-                                        @endif
-                                        <div class="flex flex-wrap gap-1 mb-2">
-                                            @php
-                                                $placeCategories = \App\Helpers\PlaceCategoryHelper::extractCategoriesFromKind(
-                                                    $place->kind,
-                                                );
-                                                $categoryInfo = collect(
-                                                    \App\Helpers\PlaceCategoryHelper::getCategories(),
-                                                )
-                                                    ->whereIn('slug', $placeCategories)
-                                                    ->take(3);
-                                            @endphp
-                                            @foreach ($categoryInfo as $cat)
-                                                <span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
-                                                    {{ $cat['name'] }}
+            {{-- Per Hari Selection --}}
+            @if ($places->count() > 0 || (isset($recommendedPlaces) && $recommendedPlaces->count() > 0))
+                @php
+                    $allPlaces = collect();
+                    if (isset($recommendedPlaces) && $recommendedPlaces->count() > 0) {
+                        $allPlaces = $allPlaces->merge($recommendedPlaces);
+                    }
+                    if ($places->count() > 0) {
+                        $allPlaces = $allPlaces->merge($places);
+                    }
+                    $allPlaces = $allPlaces->unique('id');
+                @endphp
+
+                @for ($day = 1; $day <= $durationDays; $day++)
+                    <div class="mb-6 bg-white rounded-lg shadow-lg p-8 day-section" data-day="{{ $day }}">
+                        <div class="flex items-center justify-between mb-6">
+                            <h2 class="text-2xl font-bold text-green-700">Hari {{ $day }}</h2>
+                            <div class="flex items-center gap-4">
+                                {{-- Activity Level per Hari --}}
+                                <div class="flex items-center gap-2">
+                                    <label for="activity_level_day_{{ $day }}"
+                                        class="text-sm font-medium text-gray-700">
+                                        Tingkat Aktivitas:
+                                    </label>
+                                    <select name="activity_levels[{{ $day }}]"
+                                        id="activity_level_day_{{ $day }}"
+                                        class="activity-selector px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:outline-none"
+                                        data-day="{{ $day }}">
+                                        <option value="santai"
+                                            {{ old("activity_levels.{$day}", $day == 1 ? 'normal' : 'normal') === 'santai' ? 'selected' : '' }}>
+                                            Santai (1-3 wisata)
+                                        </option>
+                                        <option value="normal"
+                                            {{ old("activity_levels.{$day}", $day == 1 ? 'normal' : 'normal') === 'normal' ? 'selected' : '' }}>
+                                            Normal (4-5 wisata)
+                                        </option>
+                                        <option value="padat"
+                                            {{ old("activity_levels.{$day}", $day == 1 ? 'normal' : 'normal') === 'padat' ? 'selected' : '' }}>
+                                            Padat (5+ wisata)
+                                        </option>
+                                    </select>
+                                </div>
+                                <div class="text-sm text-gray-600">
+                                    <span
+                                        class="selection-count-day-{{ $day }} font-semibold text-green-700">0</span>
+                                    wisata dipilih
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Search untuk hari ini --}}
+                        <div class="mb-4">
+                            <div class="relative">
+                                <input type="text" id="search-places-day-{{ $day }}"
+                                    placeholder="Cari tempat wisata untuk hari {{ $day }}..."
+                                    class="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:outline-none">
+                                <svg class="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none"
+                                    stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                </svg>
+                            </div>
+                        </div>
+
+                        {{-- Place Selection untuk hari ini --}}
+                        <div
+                            class="places-container-day-{{ $day }} grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            @foreach ($allPlaces as $index => $place)
+                                <label data-place-name="{{ strtolower($place->name) }}"
+                                    data-place-city="{{ strtolower($place->city ?? '') }}"
+                                    data-place-description="{{ strtolower($place->description ?? '') }}"
+                                    class="place-item-day-{{ $day }} flex flex-col p-4 border-2 border-gray-200 rounded-lg cursor-pointer hover:border-green-500 hover:bg-green-50 transition"
+                                    style="{{ $index >= 12 ? 'display: none;' : '' }}">
+                                    <div class="flex items-start">
+                                        <input type="checkbox" name="places_by_day[{{ $day }}][]"
+                                            value="{{ $place->id }}"
+                                            class="place-checkbox-day-{{ $day }} mt-1 w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                                            data-day="{{ $day }}" data-name="{{ $place->name }}">
+                                        <div class="ml-3 flex-1">
+                                            <h3 class="font-semibold text-gray-900 mb-1">{{ $place->name }}</h3>
+                                            @if (isset($recommendedPlaces) && $recommendedPlaces->contains('id', $place->id))
+                                                <span
+                                                    class="inline-block px-2 py-1 bg-green-100 text-green-700 text-xs rounded mb-2">
+                                                    🔮 Rekomendasi
                                                 </span>
-                                            @endforeach
-                                        </div>
-                                        <div class="flex items-center gap-4 text-sm text-gray-500">
-                                            @if ($place->city)
-                                                <span>📍 {{ $place->city }}</span>
+                                            @else
+                                                <span
+                                                    class="inline-block px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded mb-2">
+                                                    📍 Objek Wisata
+                                                </span>
                                             @endif
-                                            @if ($place->rating_avg > 0)
-                                                <span class="flex items-center">
-                                                    ⭐ {{ number_format($place->rating_avg, 1) }}
-                                                    @if ($place->rating_count > 0)
-                                                        <span class="ml-1">({{ $place->rating_count }})</span>
-                                                    @endif
-                                                </span>
+                                            @if ($place->description)
+                                                <p class="text-sm text-gray-600 mb-2 line-clamp-2">
+                                                    {{ $place->description }}</p>
+                                            @endif
+                                            <div class="flex flex-wrap gap-1 mb-2">
+                                                @php
+                                                    $placeCategories = \App\Helpers\PlaceCategoryHelper::extractCategoriesFromKind(
+                                                        $place->kind,
+                                                    );
+                                                    $categoryInfo = collect(
+                                                        \App\Helpers\PlaceCategoryHelper::getCategories(),
+                                                    )
+                                                        ->whereIn('slug', $placeCategories)
+                                                        ->take(3);
+                                                @endphp
+                                                @foreach ($categoryInfo as $cat)
+                                                    <span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
+                                                        {{ $cat['name'] }}
+                                                    </span>
+                                                @endforeach
+                                            </div>
+                                            <div class="flex items-center gap-4 text-sm text-gray-500">
+                                                @if ($place->city)
+                                                    <span>📍 {{ $place->city }}</span>
+                                                @endif
+                                                @if ($place->rating_avg > 0)
+                                                    <span class="flex items-center">
+                                                        ⭐ {{ number_format($place->rating_avg, 1) }}
+                                                        @if ($place->rating_count > 0)
+                                                            <span class="ml-1">({{ $place->rating_count }})</span>
+                                                        @endif
+                                                    </span>
+                                                @endif
+                                            </div>
+                                            @if ($place->entry_price)
+                                                <p class="text-sm text-green-600 font-medium mt-1">
+                                                    Rp {{ number_format($place->entry_price, 0, ',', '.') }}
+                                                </p>
                                             @endif
                                         </div>
                                     </div>
-                                </div>
-                            </label>
-                        @endforeach
+                                </label>
+                            @endforeach
+                        </div>
+
+                        <div id="no-results-day-{{ $day }}" class="text-center py-8 hidden">
+                            <p class="text-gray-500">Tidak ada tempat wisata yang sesuai dengan pencarian.</p>
+                        </div>
+
+                        {{-- Selected Places List --}}
+                        <div class="selected-places-day-{{ $day }} mt-6">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-2">Tempat yang Dipilih:</h3>
+                            <ul class="list-disc pl-5 space-y-1 text-gray-700"></ul>
+                        </div>
                     </div>
+                @endfor
+            @else
+                <div class="text-center py-12">
+                    <p class="text-gray-500 text-lg mb-4">Tidak ada tempat wisata yang ditemukan untuk kategori yang
+                        dipilih.</p>
+                    <a href="{{ route('itinerary.preferences') }}"
+                        class="text-green-600 hover:text-green-700 font-semibold">
+                        ← Kembali pilih preferensi
+                    </a>
                 </div>
             @endif
-
-
-            {{-- Place Selection (Lengkap) --}}
-            <div class="mb-6 bg-white rounded-lg shadow-lg p-8">
-                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-                    <label class="block text-sm font-medium text-gray-700">
-                        Tambahkan atau kurangi tempat wisata dari daftar lengkap berikut:
-                    </label>
-                    <div class="relative w-full md:w-64">
-                        <input type="text" id="search-places" placeholder="Cari tempat wisata..."
-                            class="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:outline-none">
-                        <svg class="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor"
-                            viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                        </svg>
-                    </div>
-                </div>
-
-                @if ($places->count() > 0)
-                    <div id="places-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        @foreach ($places as $index => $place)
-                            <label data-place-name="{{ strtolower($place->name) }}"
-                                data-place-city="{{ strtolower($place->city ?? '') }}"
-                                data-place-description="{{ strtolower($place->description ?? '') }}"
-                                class="place-item flex flex-col p-4 border-2 border-gray-200 rounded-lg cursor-pointer hover:border-green-500 hover:bg-green-50 transition"
-                                style="{{ $index >= 10 ? 'display: none;' : '' }}">
-                                <div class="flex items-start">
-                                    <input type="checkbox" name="place_ids[]" value="{{ $place->id }}"
-                                        class="mt-1 w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500">
-                                    <div class="ml-3 flex-1">
-                                        <h3 class="font-semibold text-gray-900 mb-1">{{ $place->name }}</h3>
-                                        {{-- Badge untuk menunjukkan ini adalah objek wisata --}}
-                                        <span
-                                            class="inline-block px-2 py-1 bg-green-100 text-green-700 text-xs rounded mb-2">📍
-                                            Objek Wisata</span>
-                                        @if ($place->description)
-                                            <p class="text-sm text-gray-600 mb-2 line-clamp-2">
-                                                {{ $place->description }}</p>
-                                        @endif
-                                        <div class="flex flex-wrap gap-1 mb-2">
-                                            @php
-                                                $placeCategories = \App\Helpers\PlaceCategoryHelper::extractCategoriesFromKind(
-                                                    $place->kind,
-                                                );
-                                                $categoryInfo = collect(
-                                                    \App\Helpers\PlaceCategoryHelper::getCategories(),
-                                                )
-                                                    ->whereIn('slug', $placeCategories)
-                                                    ->take(3);
-                                            @endphp
-                                            @foreach ($categoryInfo as $cat)
-                                                <span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
-                                                    {{ $cat['name'] }}
-                                                </span>
-                                            @endforeach
-                                        </div>
-                                        <div class="flex items-center gap-4 text-sm text-gray-500">
-                                            @if ($place->city)
-                                                <span>📍 {{ $place->city }}</span>
-                                            @endif
-                                            @if ($place->rating_avg > 0)
-                                                <span class="flex items-center">
-                                                    ⭐ {{ number_format($place->rating_avg, 1) }}
-                                                    @if ($place->rating_count > 0)
-                                                        <span class="ml-1">({{ $place->rating_count }})</span>
-                                                    @endif
-                                                </span>
-                                            @endif
-                                        </div>
-                                        @if ($place->entry_price)
-                                            <p class="text-sm text-green-600 font-medium mt-1">
-                                                Rp {{ number_format($place->entry_price, 0, ',', '.') }}
-                                            </p>
-                                        @endif
-                                    </div>
-                                </div>
-                            </label>
-                        @endforeach
-                    </div>
-
-                    <div id="no-results-message" class="text-center py-12 hidden">
-                        <p class="text-gray-500 text-lg mb-4">Tidak ada tempat wisata yang sesuai dengan pencarian Anda.
-                        </p>
-                    </div>
-
-                    @if ($places->count() > 10)
-                        <div class="text-center mt-6">
-                            <button type="button" id="load-more-btn"
-                                class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold">
-                                Muat Lebih Banyak
-                            </button>
-                            <p id="load-more-info" class="text-sm text-gray-500 mt-2"></p>
-                        </div>
-                    @endif
-                @else
-                    <div class="text-center py-12">
-                        <p class="text-gray-500 text-lg mb-4">Tidak ada tempat wisata yang ditemukan untuk kategori yang
-                            dipilih.</p>
-                        <a href="{{ route('itinerary.preferences') }}"
-                            class="text-green-600 hover:text-green-700 font-semibold">
-                            ← Kembali pilih preferensi
-                        </a>
-                    </div>
-                @endif
-
-                @error('place_ids')
-                    <p class="text-red-500 text-sm mt-2">{{ $message }}</p>
-                @enderror
-            </div>
 
             {{-- Action Buttons --}}
             <div class="flex justify-between gap-4 mt-8">
@@ -326,160 +293,191 @@
                 @endif
             </div>
         </form>
-
-        {{-- Info Box --}}
-        @if ($places->count() > 0)
-            <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p class="text-blue-800 text-sm">
-                    <strong>Tips:</strong> Pilih beberapa tempat wisata yang menarik minat Anda.
-                    Anda akan bisa menentukan durasi perjalanan dan tanggal di langkah berikutnya.
-                </p>
-            </div>
-        @endif
     </div>
 
     <script>
         (function() {
             const form = document.getElementById('placesForm');
-            const checkboxes = Array.from(document.querySelectorAll('input[name="place_ids[]"]'));
-            const maxSelection = {{ $placeSelectionLimit ?? 'null' }};
-            const infoEl = document.getElementById('selection-limit-info');
-            const searchInput = document.getElementById('search-places');
-            const placesGrid = document.getElementById('places-grid');
-            const loadMoreBtn = document.getElementById('load-more-btn');
-            const loadMoreInfo = document.getElementById('load-more-info');
-            const noResultsMessage = document.getElementById('no-results-message');
+            const durationDays = {{ $durationDays ?? 1 }};
 
-            let currentDisplayCount = 10;
-            const itemsPerPage = 10;
-            let allPlaceItems = Array.from(document.querySelectorAll('.place-item'));
-            let filteredPlaceItems = [...allPlaceItems];
-
-            function updateInfo() {
-                if (!maxSelection || !infoEl) return;
-                const count = document.querySelectorAll('input[name="place_ids[]"]:checked').length;
-                infoEl.textContent = `Terpilih ${count} / ${maxSelection}`;
-            }
-
-            function trimInitial() {
-                if (!maxSelection) return;
-                const checked = checkboxes.filter(cb => cb.checked);
-                if (checked.length > maxSelection) {
-                    checked.slice(maxSelection).forEach(cb => (cb.checked = false));
+            // Activity limits
+            const activityLimits = {
+                'santai': {
+                    min: 1,
+                    max: 3
+                },
+                'normal': {
+                    min: 4,
+                    max: 5
+                },
+                'padat': {
+                    min: 5,
+                    max: 999
                 }
-                updateInfo();
+            };
+
+            // Initialize each day
+            for (let day = 1; day <= durationDays; day++) {
+                initDay(day);
             }
 
-            function filterPlaces(searchTerm) {
-                const term = searchTerm.toLowerCase().trim();
-                if (term === '') {
-                    filteredPlaceItems = [...allPlaceItems];
-                } else {
-                    filteredPlaceItems = allPlaceItems.filter(item => {
-                        const name = item.dataset.placeName || '';
-                        const city = item.dataset.placeCity || '';
-                        const description = item.dataset.placeDescription || '';
-                        return name.includes(term) || city.includes(term) || description.includes(term);
+            function initDay(day) {
+                const activitySelect = document.getElementById(`activity_level_day_${day}`);
+                const checkboxes = Array.from(document.querySelectorAll(`.place-checkbox-day-${day}`));
+                const searchInput = document.getElementById(`search-places-day-${day}`);
+                const countEl = document.querySelector(`.selection-count-day-${day}`);
+                const placesContainer = document.querySelector(`.places-container-day-${day}`);
+                const noResultsEl = document.getElementById(`no-results-day-${day}`);
+                const allPlaceItems = Array.from(document.querySelectorAll(`.place-item-day-${day}`));
+                const selectedUl = document.querySelector(`.selected-places-day-${day} ul`);
+
+                // Update count display
+                function updateCount() {
+                    const checked = checkboxes.filter(cb => cb.checked).length;
+                    if (countEl) {
+                        countEl.textContent = checked;
+                    }
+                }
+
+                // Update selected list
+                function updateSelectedList() {
+                    selectedUl.innerHTML = ''; // Clear list
+                    checkboxes
+                        .filter(cb => cb.checked)
+                        .forEach(cb => {
+                            const li = document.createElement('li');
+                            li.textContent = cb.dataset.name;
+                            li.dataset.placeId = cb.value;
+                            selectedUl.appendChild(li);
+                        });
+                }
+
+                // Validate selection based on activity level
+                function validateSelection() {
+                    const activity = activitySelect.value;
+                    const limits = activityLimits[activity];
+                    const checked = checkboxes.filter(c => c.checked);
+
+                    if (checked.length > limits.max) {
+                        // Uncheck excess
+                        checked.slice(limits.max).forEach(cb => {
+                            cb.checked = false;
+                        });
+                        alert(`Untuk aktivitas ${activity}, maksimal ${limits.max} wisata per hari.`);
+                    }
+                    updateCount();
+                    updateSelectedList();
+                }
+
+                // Activity selector change
+                if (activitySelect) {
+                    activitySelect.addEventListener('change', function() {
+                        validateSelection();
                     });
                 }
 
-                currentDisplayCount = 10;
-                displayPlaces();
-            }
+                // Checkbox change
+                checkboxes.forEach(cb => {
+                    cb.addEventListener('change', function() {
+                        const activity = activitySelect.value;
+                        const limits = activityLimits[activity];
+                        const checked = checkboxes.filter(c => c.checked);
 
-            function displayPlaces() {
-                // Sembunyikan semua dulu
-                allPlaceItems.forEach(item => {
-                    item.style.display = 'none';
+                        if (this.checked && checked.length > limits.max) {
+                            this.checked = false;
+                            alert(
+                                `Untuk aktivitas ${activity}, maksimal ${limits.max} wisata per hari.`
+                            );
+                            return;
+                        }
+                        updateCount();
+                        updateSelectedList();
+                    });
                 });
 
-                // Tampilkan pesan jika tidak ada hasil
-                if (noResultsMessage) {
-                    if (filteredPlaceItems.length === 0) {
-                        noResultsMessage.classList.remove('hidden');
-                        if (loadMoreBtn) loadMoreBtn.style.display = 'none';
-                        if (loadMoreInfo) loadMoreInfo.textContent = '';
-                        return;
-                    } else {
-                        noResultsMessage.classList.add('hidden');
-                    }
+                // Search functionality per day
+                if (searchInput) {
+                    searchInput.addEventListener('input', function(e) {
+                        const term = e.target.value.toLowerCase().trim();
+                        let visibleCount = 0;
+
+                        allPlaceItems.forEach(item => {
+                            const name = item.dataset.placeName || '';
+                            const city = item.dataset.placeCity || '';
+                            const description = item.dataset.placeDescription || '';
+                            const matches = term === '' || name.includes(term) || city.includes(term) ||
+                                description.includes(term);
+
+                            if (matches) {
+                                item.style.display = 'flex';
+                                visibleCount++;
+                            } else {
+                                item.style.display = 'none';
+                            }
+                        });
+
+                        if (noResultsEl) {
+                            if (visibleCount === 0 && term !== '') {
+                                noResultsEl.classList.remove('hidden');
+                            } else {
+                                noResultsEl.classList.add('hidden');
+                            }
+                        }
+                    });
                 }
 
-                // Tampilkan yang sesuai filter dan dalam batas currentDisplayCount
-                const toShow = filteredPlaceItems.slice(0, currentDisplayCount);
-                toShow.forEach(item => {
-                    item.style.display = 'flex';
-                });
-
-                // Update tombol Load More
-                if (loadMoreBtn) {
-                    if (currentDisplayCount >= filteredPlaceItems.length) {
-                        loadMoreBtn.style.display = 'none';
-                        if (loadMoreInfo) {
-                            loadMoreInfo.textContent = `Menampilkan semua ${filteredPlaceItems.length} tempat`;
-                        }
-                    } else {
-                        loadMoreBtn.style.display = 'inline-block';
-                        if (loadMoreInfo) {
-                            loadMoreInfo.textContent =
-                                `Menampilkan ${currentDisplayCount} dari ${filteredPlaceItems.length} tempat`;
-                        }
-                    }
-                }
+                // Initial count and list
+                updateCount();
+                updateSelectedList();
             }
 
-            // Search functionality
-            if (searchInput) {
-                searchInput.addEventListener('input', function(e) {
-                    filterPlaces(e.target.value);
-                });
-            }
-
-            // Load More functionality
-            if (loadMoreBtn) {
-                loadMoreBtn.addEventListener('click', function() {
-                    currentDisplayCount += itemsPerPage;
-                    displayPlaces();
-                });
-            }
-
-            // Initialize display
-            if (allPlaceItems.length > 0) {
-                displayPlaces();
-            }
-
-            checkboxes.forEach(cb => {
-                cb.addEventListener('change', function(e) {
-                    if (!maxSelection) {
-                        updateInfo();
-                        return;
-                    }
-                    const checkedCount = document.querySelectorAll('input[name="place_ids[]"]:checked')
-                        .length;
-                    if (checkedCount > maxSelection) {
-                        e.target.checked = false;
-                        alert(`Maksimal ${maxSelection} tempat sesuai tingkat aktivitas Anda.`);
-                        return;
-                    }
-                    updateInfo();
-                });
-            });
-
+            // Form validation
             form.addEventListener('submit', function(e) {
-                const selected = document.querySelectorAll('input[name="place_ids[]"]:checked');
-                if (selected.length === 0) {
-                    e.preventDefault();
-                    alert('Silakan pilih minimal 1 tempat wisata.');
-                    return;
+                let hasError = false;
+                let errorMessage = '';
+
+                for (let day = 1; day <= durationDays; day++) {
+                    const activitySelect = document.getElementById(`activity_level_day_${day}`);
+                    const checkboxes = Array.from(document.querySelectorAll(
+                        `.place-checkbox-day-${day}:checked`));
+                    const activity = activitySelect.value;
+                    const limits = activityLimits[activity];
+                    const count = checkboxes.length;
+
+                    if (count < limits.min) {
+                        hasError = true;
+                        errorMessage =
+                            `Hari ${day}: Untuk aktivitas ${activity}, minimal ${limits.min} wisata harus dipilih.`;
+                        break;
+                    }
+                    if (count > limits.max) {
+                        hasError = true;
+                        errorMessage =
+                            `Hari ${day}: Untuk aktivitas ${activity}, maksimal ${limits.max} wisata.`;
+                        break;
+                    }
                 }
-                if (maxSelection && selected.length > maxSelection) {
+
+                if (hasError) {
                     e.preventDefault();
-                    alert(`Maksimal ${maxSelection} tempat sesuai tingkat aktivitas Anda.`);
+                    alert(errorMessage);
+                    return false;
+                }
+
+                // Check if at least one day has places
+                let totalSelected = 0;
+                for (let day = 1; day <= durationDays; day++) {
+                    const checkboxes = Array.from(document.querySelectorAll(
+                        `.place-checkbox-day-${day}:checked`));
+                    totalSelected += checkboxes.length;
+                }
+
+                if (totalSelected === 0) {
+                    e.preventDefault();
+                    alert('Silakan pilih minimal 1 tempat wisata untuk setidaknya satu hari.');
+                    return false;
                 }
             });
-
-            trimInitial();
-            updateInfo();
         })();
     </script>
 @endsection

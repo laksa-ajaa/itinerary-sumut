@@ -37,8 +37,7 @@ class ItineraryController extends Controller
             'duration_days' => 'required|integer|min:1|max:30',
             'start_date' => 'nullable|date|after_or_equal:today',
             'end_date' => 'nullable|date|after_or_equal:start_date',
-            'budget_level' => 'nullable|string|in:hemat,sedang,premium',
-            'activity_level' => 'nullable|string|in:santai,normal,padat',
+            'start_time' => 'required|string',
             'start_location' => 'nullable|string|max:255',
             'start_lat' => 'nullable|numeric',
             'start_lng' => 'nullable|numeric',
@@ -48,10 +47,7 @@ class ItineraryController extends Controller
         $durationDays = $validated['duration_days'];
         $startDate = $validated['start_date'] ?? null;
         $endDate = $validated['end_date'] ?? null;
-        $budgetLevel = $validated['budget_level'] ?? 'sedang';
-        $activityLevel = $validated['activity_level'] ?? 'normal';
-        $placesPerDay = $this->getPlacesPerDay($activityLevel);
-        $placeSelectionLimit = $durationDays * $placesPerDay;
+        $startTime = $validated['start_time'] ?? '08:00';
         $startLocation = $validated['start_location'] ?? null;
         $startLat = $validated['start_lat'] ?? null;
         $startLng = $validated['start_lng'] ?? null;
@@ -87,10 +83,7 @@ class ItineraryController extends Controller
             'durationDays' => $durationDays,
             'startDate' => $startDate,
             'endDate' => $endDate,
-            'budgetLevel' => $budgetLevel,
-            'activityLevel' => $activityLevel,
-            'placeSelectionLimit' => $placeSelectionLimit,
-            'placesPerDay' => $placesPerDay,
+            'startTime' => $startTime,
             'startLocation' => $startLocation,
             'startLat' => $startLat,
             'startLng' => $startLng,
@@ -122,15 +115,17 @@ class ItineraryController extends Controller
         }
 
         $validator = Validator::make($input, [
-            'place_ids' => 'required|array|min:1',
-            'place_ids.*' => 'exists:places,id',
+            'places_by_day' => 'required|array',
+            'places_by_day.*' => 'required|array|min:1',
+            'places_by_day.*.*' => 'exists:places,id',
+            'activity_levels' => 'required|array',
+            'activity_levels.*' => 'required|string|in:santai,normal,padat',
             'category_slugs' => 'nullable|array',
             'category_slugs.*' => 'string',
             'duration_days' => 'required|integer|min:1|max:30',
             'start_date' => 'nullable|date|after_or_equal:today',
             'end_date' => 'nullable|date|after_or_equal:start_date',
-            'budget_level' => 'nullable|string|in:hemat,sedang,premium',
-            'activity_level' => 'nullable|string|in:santai,normal,padat',
+            'start_time' => 'required|string',
             'start_location' => 'nullable|string|max:255',
             'start_lat' => 'nullable|numeric',
             'start_lng' => 'nullable|numeric',
@@ -144,8 +139,16 @@ class ItineraryController extends Controller
 
         $validated = $validator->validated();
 
-        $placeIds = $validated['place_ids'];
-        $places = Place::whereIn('id', $placeIds)
+        // Collect all place IDs from all days
+        $allPlaceIds = [];
+        $placesByDay = [];
+        foreach ($validated['places_by_day'] as $day => $dayPlaceIds) {
+            $allPlaceIds = array_merge($allPlaceIds, $dayPlaceIds);
+            $placesByDay[$day] = $dayPlaceIds;
+        }
+        $allPlaceIds = array_unique($allPlaceIds);
+
+        $places = Place::whereIn('id', $allPlaceIds)
             ->whereNotNull('latitude')
             ->whereNotNull('longitude')
             ->get();
@@ -162,14 +165,14 @@ class ItineraryController extends Controller
 
         return view('pages.itinerary.generate', [
             'places' => $places,
-            'placeIds' => $placeIds,
+            'placesByDay' => $placesByDay,
+            'activityLevels' => $validated['activity_levels'],
             'categories' => $categories,
             'categorySlugs' => $categorySlugs,
             'durationDays' => $validated['duration_days'],
             'startDate' => $validated['start_date'] ?? null,
             'endDate' => $validated['end_date'] ?? null,
-            'budgetLevel' => $validated['budget_level'] ?? 'sedang',
-            'activityLevel' => $validated['activity_level'] ?? 'normal',
+            'startTime' => $validated['start_time'],
             'startLocation' => $validated['start_location'] ?? null,
             'startLat' => $validated['start_lat'] ?? null,
             'startLng' => $validated['start_lng'] ?? null,
@@ -181,80 +184,60 @@ class ItineraryController extends Controller
     public function generate(Request $request)
     {
         $validated = $request->validate([
-            'place_ids' => 'required|array|min:1',
-            'place_ids.*' => 'exists:places,id',
+            'places_by_day' => 'required|array',
+            'places_by_day.*' => 'required|array|min:1',
+            'places_by_day.*.*' => 'exists:places,id',
+            'activity_levels' => 'required|array',
+            'activity_levels.*' => 'required|string|in:santai,normal,padat',
             'category_slugs' => 'nullable|array',
             'category_slugs.*' => 'string',
             'duration_days' => 'required|integer|min:1|max:30',
             'start_date' => 'nullable|date|after_or_equal:today',
-            'budget_level' => 'nullable|string|in:hemat,sedang,premium',
-            'activity_level' => 'nullable|string|in:santai,normal,padat',
+            'start_time' => 'required|string',
             'start_location' => 'nullable|string|max:255',
             'start_lat' => 'nullable|numeric',
             'start_lng' => 'nullable|numeric',
         ]);
-        // Ambil places berdasarkan ID yang dipilih
-        $categorySlugs = $validated['category_slugs'] ?? [];
 
-        $selectedPlaces = Place::whereIn('id', $validated['place_ids'])
+        // Collect places by day
+        $placesByDay = [];
+        $allPlaceIds = [];
+        foreach ($validated['places_by_day'] as $day => $dayPlaceIds) {
+            $placesByDay[$day] = $dayPlaceIds;
+            $allPlaceIds = array_merge($allPlaceIds, $dayPlaceIds);
+        }
+        $allPlaceIds = array_unique($allPlaceIds);
+
+        $categorySlugs = $validated['category_slugs'] ?? [];
+        $selectedPlaces = Place::whereIn('id', $allPlaceIds)
             ->whereNotNull('latitude')
             ->whereNotNull('longitude')
-            ->get()
-            ->filter(function ($place) use ($categorySlugs) {
-                if (!$place || !$place->id) {
-                    return false;
-                }
-                // Filter berdasarkan kategori jika ada
-                if (!empty($categorySlugs)) {
-                    $placeCategories = PlaceCategoryHelper::extractCategoriesFromKind($place->kind);
-                    return !empty(array_intersect($placeCategories, $categorySlugs));
-                }
-                return true;
-            });
-        // Validasi: minimal ada tempat yang sesuai
+            ->get();
+
         if ($selectedPlaces->isEmpty()) {
             return redirect()->back()
                 ->withInput()
                 ->with('error', 'Tidak ada tempat yang sesuai dengan filter kategori yang dipilih.');
         }
-        // Validasi: cek apakah jumlah tempat cukup untuk durasi
-        $activityLevel = $validated['activity_level'] ?? 'normal';
-        $minPlacesNeeded = $this->calculateMinPlacesNeeded(
-            $validated['duration_days'],
-            $activityLevel
-        );
-        if ($selectedPlaces->count() < $minPlacesNeeded) {
-            return redirect()->back()
-                ->withInput()
-                ->with('warning', "Untuk {$validated['duration_days']} hari dengan aktivitas {$activityLevel}, minimal dibutuhkan {$minPlacesNeeded} tempat. Saat ini hanya tersedia {$selectedPlaces->count()} tempat.");
-        }
-        $maxPlacesAllowed = $this->calculateMaxPlacesAllowed(
-            $validated['duration_days'],
-            $activityLevel
-        );
-        if ($selectedPlaces->count() > $maxPlacesAllowed) {
-            return redirect()->back()
-                ->withInput()
-                ->with('warning', "Untuk {$validated['duration_days']} hari dengan aktivitas {$activityLevel}, maksimal {$maxPlacesAllowed} tempat. Anda memilih {$selectedPlaces->count()} tempat.");
-        }
+
         $userId = Auth::id();
         $categories = collect(PlaceCategoryHelper::getCategories())
             ->whereIn('slug', $categorySlugs)
             ->values();
         $categoryNames = $categories->pluck('name')->toArray();
-        // Generate itinerary menggunakan service
-        $validPlaceIds = $selectedPlaces->pluck('id')->toArray();
 
         try {
             $itinerary = $this->itineraryService->generateItinerary(
                 $userId,
-                $validPlaceIds,
+                $placesByDay,
+                $validated['activity_levels'],
                 $validated['duration_days'],
                 $validated['start_date'] ?? null,
                 $categoryNames,
-                $validated['budget_level'] ?? 'sedang',
-                $validated['activity_level'] ?? 'normal',
-                $validated['start_location'] ?? null
+                $validated['start_time'],
+                $validated['start_location'] ?? null,
+                $validated['start_lat'] ?? null,
+                $validated['start_lng'] ?? null
             );
             // Save itinerary to database if user is authenticated
             if ($userId) {
@@ -281,7 +264,6 @@ class ItineraryController extends Controller
             'category_slugs.*' => 'string',
             'duration_days' => 'required|integer|min:1|max:30',
             'start_date' => 'nullable|date|after_or_equal:today',
-            'budget_level' => 'nullable|string|in:hemat,sedang,premium',
             'activity_level' => 'nullable|string|in:santai,normal,padat',
             'start_location' => 'nullable|string|max:255',
             'start_lat' => 'nullable|numeric',
@@ -338,16 +320,37 @@ class ItineraryController extends Controller
             ->values();
         $categoryNames = $categories->pluck('name')->toArray();
 
+        // For API, convert to new format (backward compatibility)
+        // If places_by_day is provided, use it; otherwise, distribute evenly
+        $placesByDay = [];
+        $activityLevels = [];
+        if ($request->has('places_by_day') && is_array($request->input('places_by_day'))) {
+            $placesByDay = $request->input('places_by_day');
+            $activityLevelsInput = $request->input('activity_levels', []);
+            $activityLevels = is_array($activityLevelsInput) ? $activityLevelsInput : [];
+        } else {
+            // Distribute places evenly across days
+            $placeIds = $selectedPlaces->pluck('id')->toArray();
+            $placesPerDay = ceil(count($placeIds) / $validated['duration_days']);
+            for ($day = 1; $day <= $validated['duration_days']; $day++) {
+                $dayKey = (string)$day;
+                $placesByDay[$dayKey] = array_slice($placeIds, ($day - 1) * $placesPerDay, $placesPerDay);
+                $activityLevels[$dayKey] = $activityLevel;
+            }
+        }
+
         try {
             $itinerary = $this->itineraryService->generateItinerary(
                 Auth::id(),
-                $selectedPlaces->pluck('id')->toArray(),
+                $placesByDay,
+                $activityLevels,
                 $validated['duration_days'],
                 $validated['start_date'] ?? null,
                 $categoryNames,
-                $validated['budget_level'] ?? 'sedang',
-                $activityLevel,
-                $validated['start_location'] ?? null
+                $validated['start_time'] ?? '08:00',
+                $validated['start_location'] ?? null,
+                $validated['start_lat'] ?? null,
+                $validated['start_lng'] ?? null
             );
 
             return response()->json($itinerary);
@@ -362,20 +365,59 @@ class ItineraryController extends Controller
     /**
      * Calculate minimum places needed based on duration and activity level
      */
+    /**
+     * Calculate minimum places needed for entire trip based on activity level
+     * Activity level determines total places for all days, not per day
+     */
     private function calculateMinPlacesNeeded(int $durationDays, string $activityLevel): int
     {
-        $placesPerDay = $this->getPlacesPerDay($activityLevel);
-        return $durationDays * $placesPerDay;
+        $totalPlaces = $this->getTotalPlacesForTrip($durationDays, $activityLevel);
+        return $totalPlaces['min'];
     }
 
+    /**
+     * Calculate maximum places allowed for entire trip based on activity level
+     * Activity level determines total places for all days, not per day
+     */
     private function calculateMaxPlacesAllowed(int $durationDays, string $activityLevel): int
     {
-        $placesPerDay = $this->getPlacesPerDay($activityLevel);
-        return $durationDays * $placesPerDay;
+        $totalPlaces = $this->getTotalPlacesForTrip($durationDays, $activityLevel);
+        return $totalPlaces['max'];
     }
 
+    /**
+     * Get total places for entire trip based on activity level and duration
+     * Activity level determines total places for all days, not per day
+     */
+    private function getTotalPlacesForTrip(int $durationDays, string $activityLevel): array
+    {
+        // Base total places for entire trip based on activity level
+        $basePlaces = match ($activityLevel) {
+            'santai' => ['min' => 2, 'max' => 3],      // 2-3 places total for entire trip
+            'normal' => ['min' => 3, 'max' => 5],      // 3-5 places total for entire trip
+            'padat' => ['min' => 5, 'max' => 7],       // 5-7 places total for entire trip
+            default => ['min' => 3, 'max' => 5],
+        };
+
+        // Scale based on duration days
+        // For multi-day trips, multiply base by duration (but keep it reasonable)
+        if ($durationDays > 1) {
+            return [
+                'min' => $basePlaces['min'] * $durationDays,
+                'max' => $basePlaces['max'] * $durationDays,
+            ];
+        }
+
+        return $basePlaces;
+    }
+
+    /**
+     * Get places per day (for backward compatibility, but now calculated from total)
+     * This is now used for display/calculation purposes only
+     */
     private function getPlacesPerDay(string $activityLevel): int
     {
+        // This is now just for display, actual calculation uses getTotalPlacesForTrip
         return match ($activityLevel) {
             'santai' => 2,
             'normal' => 3,
@@ -397,7 +439,6 @@ class ItineraryController extends Controller
             'duration_days' => $itinerary['metadata']['duration_days'],
             'start_date' => $itinerary['metadata']['start_date'],
             'end_date' => $itinerary['metadata']['end_date'],
-            'budget_level' => $itinerary['metadata']['budget_level'],
             'activity_level' => $itinerary['metadata']['activity_level'],
             'total_cost' => $itinerary['summary']['total_estimated_cost'],
             'data' => json_encode($itinerary),

@@ -12,18 +12,39 @@ import logging
 from typing import List, Optional
 from uuid import UUID
 
-# Setup logging
+# Setup logging first
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Try to load .env file if python-dotenv is available
+try:
+    from dotenv import load_dotenv
+    # Try loading from parent directory (Laravel .env) first, then current directory
+    parent_env = os.path.join(os.path.dirname(__file__), '..', '.env')
+    current_env = os.path.join(os.path.dirname(__file__), '.env')
+    
+    if os.path.exists(parent_env):
+        load_dotenv(dotenv_path=parent_env, override=False)
+        logger.info(f"Loaded .env from parent directory: {parent_env}")
+    elif os.path.exists(current_env):
+        load_dotenv(dotenv_path=current_env, override=False)
+        logger.info(f"Loaded .env from current directory: {current_env}")
+    else:
+        logger.warning("No .env file found, using environment variables only")
+except ImportError:
+    logger.warning("python-dotenv not installed, using environment variables only")
+except Exception as e:
+    logger.warning(f"Error loading .env file: {e}")
+
 app = FastAPI(title="Itinerary Reco Service")
 
-# Database config
+# Database config - use Laravel .env variable names
+# Default values match Laravel .env configuration
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
-DB_NAME = os.getenv("DB_DATABASE", "itinerary")
-DB_USER = os.getenv("DB_USERNAME", "postgres")
-DB_PASS = os.getenv("DB_PASSWORD", "postgres")
+DB_NAME = os.getenv("DB_DATABASE", "itinerary_sumut")
+DB_USER = os.getenv("DB_USERNAME", "root")
+DB_PASS = os.getenv("DB_PASSWORD", "root")
 
 # Connection pool
 connection_pool = None
@@ -31,6 +52,7 @@ connection_pool = None
 def init_pool():
     global connection_pool
     try:
+        logger.info(f"Connecting to database: {DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
         connection_pool = psycopg2.pool.SimpleConnectionPool(
             1, 20,
             host=DB_HOST, 
@@ -39,9 +61,10 @@ def init_pool():
             user=DB_USER, 
             password=DB_PASS
         )
-        logger.info("Database connection pool created")
+        logger.info("Database connection pool created successfully")
     except Exception as e:
         logger.error(f"Failed to create connection pool: {e}")
+        logger.error(f"Connection details: host={DB_HOST}, port={DB_PORT}, dbname={DB_NAME}, user={DB_USER}")
         raise
 
 def get_conn():

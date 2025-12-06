@@ -17,7 +17,6 @@ class Itinerary extends Model
         'title',
         'start_date',
         'day_count',
-        'budget_level',
         'activity_level',
         'preferences',
         'generated_payload'

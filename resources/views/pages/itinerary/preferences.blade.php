@@ -110,45 +110,15 @@
                 @enderror
             </div>
 
-            {{-- Budget Level --}}
+            {{-- Jam Berangkat Hari Pertama --}}
             <div class="mb-6">
-                <label for="budget_level" class="block text-sm font-medium text-gray-700 mb-2">
-                    Budget Itinerary
+                <label for="start_time" class="block text-sm font-medium text-gray-700 mb-2">
+                    Jam Berangkat Hari Pertama <span class="text-red-500">*</span>
                 </label>
-                <select name="budget_level" id="budget_level"
+                <input type="time" name="start_time" id="start_time" value="{{ old('start_time', '08:00') }}" required
                     class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:outline-none">
-                    @php $currentBudget = old('budget_level', 'sedang'); @endphp
-                    <option value="hemat" {{ $currentBudget === 'hemat' ? 'selected' : '' }}>Hemat — hanya tempat wisata
-                    </option>
-                    <option value="sedang" {{ $currentBudget === 'sedang' ? 'selected' : '' }}>Sedang — wisata + restoran
-                    </option>
-                    <option value="premium" {{ $currentBudget === 'premium' ? 'selected' : '' }}>Premium — wisata +
-                        restoran + hotel</option>
-                </select>
-                <p class="text-sm text-gray-500 mt-2">Budget di sini mengatur kelengkapan itinerary, bukan menghitung biaya
-                    detail.</p>
-                @error('budget_level')
-                    <p class="text-red-500 text-sm mt-1">{{ $message }}</p>
-                @enderror
-            </div>
-
-            {{-- Activity Level --}}
-            <div class="mb-6">
-                <label for="activity_level" class="block text-sm font-medium text-gray-700 mb-2">
-                    Tingkat Aktivitas per Hari
-                </label>
-                <select name="activity_level" id="activity_level"
-                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:outline-none">
-                    @php $currentActivity = old('activity_level', 'normal'); @endphp
-                    <option value="santai" {{ $currentActivity === 'santai' ? 'selected' : '' }}>Santai — sekitar 2–3
-                        wisata per hari</option>
-                    <option value="normal" {{ $currentActivity === 'normal' ? 'selected' : '' }}>Normal — sekitar 3–5
-                        wisata per hari</option>
-                    <option value="padat" {{ $currentActivity === 'padat' ? 'selected' : '' }}>Padat — sekitar 5–7 wisata
-                        per hari</option>
-                </select>
-                <p class="text-sm text-gray-500 mt-2">Sesuaikan dengan gaya perjalanan yang kamu inginkan.</p>
-                @error('activity_level')
+                <p class="text-sm text-gray-500 mt-2">Tentukan jam berangkat untuk hari pertama perjalanan Anda.</p>
+                @error('start_time')
                     <p class="text-red-500 text-sm mt-1">{{ $message }}</p>
                 @enderror
             </div>
@@ -196,7 +166,7 @@
         {{-- Info Box --}}
         <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
             <p class="text-blue-800 text-sm">
-                <strong>Tips:</strong> Isi dulu lokasi start, durasi, budget, tingkat aktivitas, lalu pilih minat wisata.
+                <strong>Tips:</strong> Isi dulu lokasi start, durasi, jam berangkat, lalu pilih minat wisata.
                 Sistem akan mencocokkan wisata berdasarkan preferensi dan rekomendasi AI.
             </p>
         </div>

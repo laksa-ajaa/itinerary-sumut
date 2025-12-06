@@ -89,7 +89,7 @@ curl -X POST http://localhost:8000/api/recommend -H 'Content-Type: application/j
 ### Next Steps (disarankan)
 - Auth API (Sanctum/Breeze) + endpoint rating/visit user
 - Filter `kind` di `/api/places` (+ parameter pencarian lokasi)
-- Penyusunan itinerary otomatis berdasarkan waktu, jarak, dan budget
+- Penyusunan itinerary otomatis berdasarkan waktu dan jarak
 - Scheduler: retrain rekomendasi + impor pembaruan berkala
 
 ### Catatan Kuota & TOS Google Places

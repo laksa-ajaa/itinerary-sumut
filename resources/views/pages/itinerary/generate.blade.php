@@ -64,14 +64,9 @@
                             ⏱️ Durasi: {{ $durationDays }} hari
                         </span>
                     @endif
-                    @if (!empty($budgetLevel))
-                        <span class="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium">
-                            💰 Budget: {{ ucfirst($budgetLevel) }}
-                        </span>
-                    @endif
-                    @if (!empty($activityLevel))
+                    @if (!empty($startTime))
                         <span class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium">
-                            🎯 Aktivitas: {{ ucfirst($activityLevel) }}
+                            ⏰ Jam Berangkat: {{ $startTime }}
                         </span>
                     @endif
                 </div>
@@ -88,21 +83,33 @@
                 </div>
             @endif
 
-            <div class="bg-white rounded-lg shadow-lg p-6">
-                <h2 class="text-xl font-semibold text-gray-900 mb-4">Tempat yang Dipilih ({{ $places->count() }})</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    @foreach ($places as $place)
-                        <div class="flex items-center p-3 bg-gray-50 rounded-lg">
-                            <div class="flex-1">
-                                <h3 class="font-medium text-gray-900">{{ $place->name }}</h3>
-                                @if ($place->city)
-                                    <p class="text-sm text-gray-500">{{ $place->city }}</p>
-                                @endif
-                            </div>
+            {{-- Tempat yang Dipilih per Hari --}}
+            @if (isset($placesByDay))
+                @foreach ($placesByDay as $day => $dayPlaceIds)
+                    @php
+                        $dayPlaces = $places->whereIn('id', $dayPlaceIds);
+                        $activityLevel = $activityLevels[$day] ?? 'normal';
+                    @endphp
+                    <div class="bg-white rounded-lg shadow-lg p-6 mb-4">
+                        <h2 class="text-xl font-semibold text-gray-900 mb-3">
+                            Hari {{ $day }} - Aktivitas: {{ ucfirst($activityLevel) }}
+                            <span class="text-sm font-normal text-gray-500">({{ $dayPlaces->count() }} tempat)</span>
+                        </h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            @foreach ($dayPlaces as $place)
+                                <div class="flex items-center p-3 bg-gray-50 rounded-lg">
+                                    <div class="flex-1">
+                                        <h3 class="font-medium text-gray-900">{{ $place->name }}</h3>
+                                        @if ($place->city)
+                                            <p class="text-sm text-gray-500">{{ $place->city }}</p>
+                                        @endif
+                                    </div>
+                                </div>
+                            @endforeach
                         </div>
-                    @endforeach
-                </div>
-            </div>
+                    </div>
+                @endforeach
+            @endif
         </div>
 
         {{-- Form --}}
@@ -110,9 +117,22 @@
             id="generateForm">
             @csrf
 
-            @foreach ($placeIds as $placeId)
-                <input type="hidden" name="place_ids[]" value="{{ $placeId }}">
-            @endforeach
+            {{-- Places by Day --}}
+            @if (isset($placesByDay))
+                @foreach ($placesByDay as $day => $dayPlaceIds)
+                    @foreach ($dayPlaceIds as $placeId)
+                        <input type="hidden" name="places_by_day[{{ $day }}][]" value="{{ $placeId }}">
+                    @endforeach
+                @endforeach
+            @endif
+
+            {{-- Activity Levels --}}
+            @if (isset($activityLevels))
+                @foreach ($activityLevels as $day => $activityLevel)
+                    <input type="hidden" name="activity_levels[{{ $day }}]" value="{{ $activityLevel }}">
+                @endforeach
+            @endif
+
             @foreach ($categorySlugs as $categorySlug)
                 <input type="hidden" name="category_slugs[]" value="{{ $categorySlug }}">
             @endforeach
@@ -128,11 +148,8 @@
             @if (!empty($durationDays))
                 <input type="hidden" name="duration_days" value="{{ $durationDays }}">
             @endif
-            @if (!empty($budgetLevel))
-                <input type="hidden" name="budget_level" value="{{ $budgetLevel }}">
-            @endif
-            @if (!empty($activityLevel))
-                <input type="hidden" name="activity_level" value="{{ $activityLevel }}">
+            @if (!empty($startTime))
+                <input type="hidden" name="start_time" value="{{ $startTime }}">
             @endif
 
             {{-- Duration (Read-only dari preferences) --}}
@@ -186,49 +203,20 @@
                 </div>
             @endif
 
-            {{-- Budget Level (Read-only dari preferences) --}}
-            @php
-                $currentBudget = $budgetLevel ?? 'sedang';
-                $budgetLabels = [
-                    'hemat' => 'Hemat — hanya tempat wisata (tanpa restoran & hotel)',
-                    'sedang' => 'Sedang — wisata + rekomendasi restoran',
-                    'premium' => 'Premium — wisata + restoran + hotel',
-                ];
-            @endphp
-            <input type="hidden" name="budget_level" value="{{ $currentBudget }}">
-            <div class="mb-6">
-                <label class="block text-sm font-medium text-gray-700 mb-2">
-                    Tingkat Budget (Kelengkapan Itinerary)
-                </label>
-                <div class="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg text-gray-700">
-                    {{ $budgetLabels[$currentBudget] ?? ucfirst($currentBudget) }}
+            {{-- Start Time (Read-only dari preferences) --}}
+            @if (!empty($startTime))
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Jam Berangkat Hari Pertama
+                    </label>
+                    <div class="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg text-gray-700">
+                        ⏰ {{ $startTime }}
+                    </div>
+                    <p class="text-sm text-gray-500 mt-2">
+                        Jam berangkat dari preferensi yang sudah dipilih sebelumnya.
+                    </p>
                 </div>
-                <p class="text-sm text-gray-500 mt-2">
-                    Budget dari preferensi yang sudah dipilih sebelumnya.
-                </p>
-            </div>
-
-            {{-- Activity Level (Read-only dari preferences) --}}
-            @php
-                $currentActivity = $activityLevel ?? 'normal';
-                $activityLabels = [
-                    'santai' => 'Santai — sekitar 2–3 wisata per hari',
-                    'normal' => 'Normal — sekitar 3–5 wisata per hari',
-                    'padat' => 'Padat — sekitar 5–7 wisata per hari',
-                ];
-            @endphp
-            <input type="hidden" name="activity_level" value="{{ $currentActivity }}">
-            <div class="mb-6">
-                <label class="block text-sm font-medium text-gray-700 mb-2">
-                    Tingkat Aktivitas per Hari
-                </label>
-                <div class="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg text-gray-700">
-                    {{ $activityLabels[$currentActivity] ?? ucfirst($currentActivity) }}
-                </div>
-                <p class="text-sm text-gray-500 mt-2">
-                    Tingkat aktivitas dari preferensi yang sudah dipilih sebelumnya.
-                </p>
-            </div>
+            @endif
 
             {{-- Start Location (Read-only dari preferences) --}}
             @if (!empty($startLocation))
