@@ -572,14 +572,25 @@ class ItineraryController extends Controller
     {
         $userId = Auth::id();
 
-        // Load specific itinerary
-        // $itinerary = Itinerary::where('id', $id)
-        //     ->where('user_id', $userId)
-        //     ->firstOrFail();
-        // $itineraryData = json_decode($itinerary->data, true);
-        // return view('pages.itinerary.result', compact('itineraryData'));
+        if (!$userId) {
+            return redirect()->route('login')
+                ->with('error', 'Silakan login untuk melihat itinerary Anda.');
+        }
 
-        return redirect()->route('itinerary.preferences');
+        // Load specific itinerary
+        $itinerary = Itinerary::where('id', $id)
+            ->where('user_id', $userId)
+            ->firstOrFail();
+
+        // Get itinerary data from generated_payload
+        $itineraryData = $itinerary->generated_payload ?? [];
+
+        if (empty($itineraryData)) {
+            return redirect()->route('itinerary.index')
+                ->with('error', 'Data itinerary tidak ditemukan.');
+        }
+
+        return view('pages.itinerary.result', compact('itinerary', 'itineraryData'));
     }
     /**
      * Delete itinerary
@@ -588,11 +599,17 @@ class ItineraryController extends Controller
     {
         $userId = Auth::id();
 
-        // $itinerary = Itinerary::where('id', $id)
-        //     ->where('user_id', $userId)
-        //     ->firstOrFail();
+        if (!$userId) {
+            return redirect()->route('login')
+                ->with('error', 'Silakan login untuk menghapus itinerary.');
+        }
 
-        // $itinerary->delete();
+        $itinerary = Itinerary::where('id', $id)
+            ->where('user_id', $userId)
+            ->firstOrFail();
+
+        $itinerary->delete();
+
         return redirect()->route('itinerary.index')
             ->with('success', 'Itinerary berhasil dihapus.');
     }

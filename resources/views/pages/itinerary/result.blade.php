@@ -364,8 +364,18 @@
 
             @push('scripts')
                 <script>
+                    // Mapbox configuration
+                    const MAPBOX_ACCESS_TOKEN = '{{ config('services.mapbox.access_token') }}';
+
+                    // Validate Mapbox token
+                    if (!MAPBOX_ACCESS_TOKEN || MAPBOX_ACCESS_TOKEN === '') {
+                        console.error('⚠️ Mapbox Access Token tidak ditemukan! Pastikan MAPBOX_ACCESS_TOKEN sudah di-set di file .env');
+                    } else {
+                        console.log('✅ Mapbox Access Token loaded');
+                    }
+
                     (function() {
-                        // Initialize maps for each day using Leaflet Routing Machine
+                        // Initialize maps for each day using Leaflet Routing Machine with Mapbox routing
                         const dailyPlans = @json($itinerary['daily_plans'] ?? []);
 
                         function initMap(dayNumber, places, startPoint, returnTrip = null) {
@@ -483,7 +493,24 @@
                                     const toKey = `${waypoints[i + 1].lat.toFixed(4)},${waypoints[i + 1].lng.toFixed(4)}`;
                                     const segmentKey = fromKey + '|' + toKey;
 
-                                    // Create routing control for this segment (hidden)
+                                    // Create routing control for this segment using Mapbox (hidden)
+                                    // Check if Mapbox router is available, fallback to OSRM if not
+                                    let router;
+                                    if (MAPBOX_ACCESS_TOKEN && MAPBOX_ACCESS_TOKEN !== '' && L.Routing.mapbox) {
+                                        router = L.Routing.mapbox(MAPBOX_ACCESS_TOKEN, {
+                                            profile: 'mapbox/driving',
+                                            language: 'id'
+                                        });
+                                    } else {
+                                        console.warn(
+                                            '⚠️ Mapbox router tidak tersedia, menggunakan OSRM demo (tidak disarankan untuk production)'
+                                            );
+                                        router = L.Routing.osrmv1({
+                                            serviceUrl: 'https://router.project-osrm.org/route/v1',
+                                            profile: 'driving'
+                                        });
+                                    }
+
                                     const segmentControl = L.Routing.control({
                                         waypoints: segmentWaypoints,
                                         routeWhileDragging: false,
@@ -492,10 +519,7 @@
                                         createMarker: function() {
                                             return false; // Don't create markers
                                         },
-                                        router: L.Routing.osrmv1({
-                                            serviceUrl: 'https://router.project-osrm.org/route/v1',
-                                            profile: 'driving'
-                                        })
+                                        router: router
                                     });
 
                                     segmentControl.addTo(map);

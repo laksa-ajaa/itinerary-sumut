@@ -101,17 +101,17 @@
 
                         <div class="flex justify-between items-center pt-2">
                             <div class="text-xs text-gray-500">
-                                ID: {{ $itinerary->id }}
+                                Dibuat {{ $itinerary->created_at?->diffForHumans() }}
                             </div>
-                            <div class="flex items-center gap-2">
-                                <a href="{{ route('itinerary.generate') }}"
-                                    class="text-green-600 hover:text-green-700 font-medium text-sm">Lihat</a>
-                                {{-- Placeholder delete action --}}
-                                {{-- <form action="{{ route('itinerary.destroy', $itinerary->id) }}" method="POST">
+                            <div class="flex items-center gap-3">
+                                <a href="{{ route('itinerary.show', $itinerary->id) }}"
+                                    class="text-green-600 hover:text-green-700 font-medium text-sm">Lihat Detail</a>
+                                <form action="{{ route('itinerary.destroy', $itinerary->id) }}" method="POST"
+                                    onsubmit="return confirm('Apakah Anda yakin ingin menghapus itinerary ini?');">
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="text-red-600 hover:text-red-700 text-sm">Hapus</button>
-                                </form> --}}
+                                </form>
                             </div>
                         </div>
                     </div>

@@ -43,4 +43,8 @@ return [
         'url' => env('RECO_SERVICE_URL', 'http://localhost:8001'),
     ],
 
+    'mapbox' => [
+        'access_token' => env('MAPBOX_ACCESS_TOKEN'),
+    ],
+
 ];

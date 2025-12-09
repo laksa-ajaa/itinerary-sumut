@@ -99,6 +99,8 @@ Route::post('/itinerary/places', [ItineraryController::class, 'selectPlaces'])->
 Route::match(['get', 'post'], '/itinerary/generate', [ItineraryController::class, 'showGenerate'])->name('itinerary.generate');
 Route::post('/itinerary/generate/process', [ItineraryController::class, 'generate'])->name('itinerary.generate.process');
 Route::get('/itineraries', [ItineraryController::class, 'index'])->middleware('auth')->name('itinerary.index');
+Route::get('/itineraries/{id}', [ItineraryController::class, 'show'])->middleware('auth')->name('itinerary.show');
+Route::delete('/itineraries/{id}', [ItineraryController::class, 'destroy'])->middleware('auth')->name('itinerary.destroy');
 
 // API Routes
 Route::post('/api/itinerary/generate', [ItineraryController::class, 'generateApi']);
