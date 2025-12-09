@@ -582,15 +582,25 @@ class ItineraryController extends Controller
             ->where('user_id', $userId)
             ->firstOrFail();
 
-        // Get itinerary data from generated_payload
+        // Get itinerary data from generated_payload (casted array or JSON string)
         $itineraryData = $itinerary->generated_payload ?? [];
+        if (is_string($itineraryData)) {
+            $decoded = json_decode($itineraryData, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $itineraryData = $decoded;
+            }
+        }
 
-        if (empty($itineraryData)) {
+        if (empty($itineraryData) || !is_array($itineraryData)) {
             return redirect()->route('itinerary.index')
                 ->with('error', 'Data itinerary tidak ditemukan.');
         }
 
-        return view('pages.itinerary.result', compact('itinerary', 'itineraryData'));
+        // Pass generated payload as $itinerary (for view expectation) and keep saved model
+        return view('pages.itinerary.result', [
+            'itinerary' => $itineraryData,
+            'savedItinerary' => $itinerary,
+        ]);
     }
     /**
      * Delete itinerary
