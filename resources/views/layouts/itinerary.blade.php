@@ -24,38 +24,7 @@
 <body class="bg-gray-50 text-gray-900">
 
     {{-- Navbar --}}
-    <nav class="bg-white shadow-md fixed w-full top-0 z-50">
-        <div class="container mx-auto flex items-center justify-between px-6 py-3">
-            <a href="{{ route('home') }}" class="text-2xl font-bold text-green-700">Itinerary<span
-                    class="text-emerald-500">Sumut</span></a>
-            <ul class="hidden md:flex gap-6 font-medium text-gray-700">
-                <li><a href="{{ route('home') }}" class="hover:text-green-600">Beranda</a></li>
-                <li><a href="{{ route('itinerary.preferences') }}" class="hover:text-green-600">Buat Itinerary</a>
-                </li>
-                @auth
-                    <li><a href="{{ route('dashboard') }}" class="hover:text-green-600">Dashboard</a></li>
-                @endauth
-            </ul>
-            <div class="flex items-center gap-4">
-                @guest
-                    <a href="{{ route('login') }}"
-                        class="hidden md:block bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition">
-                        Masuk
-                    </a>
-                @else
-                    <span class="hidden md:block text-gray-700">{{ Auth::user()->name }}</span>
-                    <form action="{{ route('logout') }}" method="POST" class="hidden md:block">
-                        @csrf
-                        <button type="submit"
-                            class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition">
-                            Logout
-                        </button>
-                    </form>
-                @endguest
-            </div>
-        </div>
-    </nav>
-    <div class="h-16"></div>
+    @include('partials.navbar')
 
     {{-- Main Content --}}
     <main class="min-h-screen py-8">

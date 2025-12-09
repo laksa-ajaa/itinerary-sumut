@@ -6,7 +6,7 @@
 
     {{-- Hero Section --}}
     <section id="home" class="relative bg-cover bg-center h-[90vh]"
-        style="background-image: url('{{ asset('images/hero-sumut.jpg') }}')">
+        style="background-image: url('{{ asset('assets/img/hero-banner.svg') }}')">
         <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
             <div class="text-center text-white px-6">
                 <h1 class="text-5xl md:text-6xl font-bold mb-4">Temukan Keindahan Sumatera Utara</h1>
@@ -58,30 +58,85 @@
         </div>
     </section>
 
-    {{-- Popular Destinations --}}
-    <section id="destinations" class="py-20 bg-gray-50 text-center">
-        <h2 class="text-3xl font-bold mb-10 text-green-700">Destinasi Populer</h2>
-        <div class="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto">
-            <div class="rounded-xl overflow-hidden shadow hover:scale-105 transition">
-                <img src="{{ asset('images/danau-toba.jpg') }}" alt="Danau Toba" class="w-full h-60 object-cover">
-                <div class="p-5">
-                    <h3 class="text-lg font-semibold">Danau Toba</h3>
-                    <p class="text-sm text-gray-600">Keajaiban alam terbesar di Sumatera Utara.</p>
+    {{-- Tentang --}}
+    <section id="about" class="py-20 bg-gray-50">
+        <div class="max-w-5xl mx-auto px-6 grid md:grid-cols-2 gap-10 items-center">
+            <div>
+                <h2 class="text-3xl font-bold mb-4 text-green-700">Tentang Itinerary Sumut</h2>
+                <p class="text-gray-700 leading-relaxed">
+                    Itinerary Sumut adalah platform perencanaan perjalanan untuk mengeksplor Sumatera Utara.
+                    Kami memanfaatkan rekomendasi AI, peta interaktif, dan jadwal otomatis supaya kamu bisa
+                    merancang perjalanan yang pas dengan waktu, budget, dan preferensi kamu.
+                </p>
+            </div>
+            <div class="bg-white border rounded-xl p-6 shadow-sm">
+                <ul class="space-y-4 text-gray-700">
+                    <li class="flex items-start gap-3">
+                        <span class="text-green-600 text-lg">•</span>
+                        <div>
+                            <p class="font-semibold">Fokus Sumatera Utara</p>
+                            <p class="text-sm text-gray-600">Kurasi khusus destinasi wisata, kuliner, dan penginapan di
+                                Sumut.</p>
+                        </div>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-green-600 text-lg">•</span>
+                        <div>
+                            <p class="font-semibold">Ramah waktu & budget</p>
+                            <p class="text-sm text-gray-600">Jadwal otomatis menyesuaikan jam mulai, durasi, serta tingkat
+                                aktivitas.</p>
+                        </div>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <span class="text-green-600 text-lg">•</span>
+                        <div>
+                            <p class="font-semibold">Simpan & akses kembali</p>
+                            <p class="text-sm text-gray-600">Login untuk menyimpan itinerary dan melanjutkan kapan saja.</p>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    {{-- Benefit Sistem --}}
+    <section id="benefits" class="py-20 bg-white">
+        <div class="max-w-6xl mx-auto px-6">
+            <h2 class="text-3xl font-bold mb-10 text-green-700 text-center">Bagaimana sistem ini membantu?</h2>
+            <div class="grid md:grid-cols-3 gap-8">
+                <div class="p-6 border rounded-xl hover:shadow-lg transition">
+                    <h3 class="text-xl font-semibold mb-3">Pilih preferensi</h3>
+                    <p class="text-gray-700">Atur kategori (wisata, kuliner, dll), tanggal mulai, titik keberangkatan, dan
+                        durasi.</p>
+                </div>
+                <div class="p-6 border rounded-xl hover:shadow-lg transition">
+                    <h3 class="text-xl font-semibold mb-3">AI susun rute & jadwal</h3>
+                    <p class="text-gray-700">Sistem menghitung jarak, menempatkan waktu makan siang, serta rekomendasi hotel
+                        jika perlu.</p>
+                </div>
+                <div class="p-6 border rounded-xl hover:shadow-lg transition">
+                    <h3 class="text-xl font-semibold mb-3">Simpan & pakai di lapangan</h3>
+                    <p class="text-gray-700">Masuk untuk menyimpan itinerary, lalu akses kembali saat perjalanan dengan peta
+                        interaktif.</p>
                 </div>
             </div>
-            <div class="rounded-xl overflow-hidden shadow hover:scale-105 transition">
-                <img src="{{ asset('images/berastagi.jpg') }}" alt="Berastagi" class="w-full h-60 object-cover">
-                <div class="p-5">
-                    <h3 class="text-lg font-semibold">Berastagi</h3>
-                    <p class="text-sm text-gray-600">Kota sejuk di kaki Gunung Sibayak yang penuh pesona.</p>
-                </div>
-            </div>
-            <div class="rounded-xl overflow-hidden shadow hover:scale-105 transition">
-                <img src="{{ asset('images/medan.jpg') }}" alt="Medan" class="w-full h-60 object-cover">
-                <div class="p-5">
-                    <h3 class="text-lg font-semibold">Medan</h3>
-                    <p class="text-sm text-gray-600">Pusat kuliner dan budaya dengan tempat menarik.</p>
-                </div>
+        </div>
+    </section>
+
+    {{-- Kontak --}}
+    <section id="contact" class="py-20 bg-gray-50">
+        <div class="max-w-4xl mx-auto px-6 text-center">
+            <h2 class="text-3xl font-bold mb-4 text-green-700">Kontak</h2>
+            <p class="text-gray-700 mb-6">Ada masukan atau butuh bantuan? Hubungi kami.</p>
+            <div class="flex flex-col sm:flex-row justify-center gap-4 text-gray-800">
+                <a href="mailto:halo@itinerarysumut.com"
+                    class="px-5 py-3 border border-gray-200 rounded-lg hover:border-green-500 hover:text-green-600 transition">
+                    📧 halo@itinerarysumut.com
+                </a>
+                <a href="https://wa.me/6281234567890" target="_blank" rel="noopener"
+                    class="px-5 py-3 border border-gray-200 rounded-lg hover:border-green-500 hover:text-green-600 transition">
+                    💬 WhatsApp Admin
+                </a>
             </div>
         </div>
     </section>

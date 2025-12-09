@@ -12,7 +12,7 @@
 <body class="bg-gray-50 text-gray-900">
 
     {{-- Navbar --}}
-    @include('partials.landing.navbar')
+    @include('partials.navbar')
 
     {{-- Main Content --}}
     <main class="min-h-screen">

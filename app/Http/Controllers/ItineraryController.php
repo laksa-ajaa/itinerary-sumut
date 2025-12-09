@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Place;
+use App\Models\Itinerary;
+use App\Models\ItineraryItem;
 use App\Services\ItineraryService;
 use App\Helpers\PlaceCategoryHelper;
 use Illuminate\Http\Request;
@@ -340,8 +342,9 @@ class ItineraryController extends Controller
         }
 
         try {
+            $userId = Auth::id();
             $itinerary = $this->itineraryService->generateItinerary(
-                Auth::id(),
+                $userId,
                 $placesByDay,
                 $activityLevels,
                 $validated['duration_days'],
@@ -352,6 +355,11 @@ class ItineraryController extends Controller
                 $validated['start_lat'] ?? null,
                 $validated['start_lng'] ?? null
             );
+
+            // Save itinerary to database if user is authenticated
+            if ($userId) {
+                $this->saveItineraryToDatabase($userId, $itinerary, $validated);
+            }
 
             return response()->json($itinerary);
         } catch (\Exception $e) {
@@ -430,20 +438,114 @@ class ItineraryController extends Controller
      */
     private function saveItineraryToDatabase(int $userId, array $itinerary, array $validated): void
     {
-        // You can implement this based on your database schema
-        // Example:
-        /*
-        $savedItinerary = Itinerary::create([
-            'user_id' => $userId,
-            'title' => 'Trip ' . $itinerary['metadata']['start_date'],
-            'duration_days' => $itinerary['metadata']['duration_days'],
-            'start_date' => $itinerary['metadata']['start_date'],
-            'end_date' => $itinerary['metadata']['end_date'],
-            'activity_level' => $itinerary['metadata']['activity_level'],
-            'total_cost' => $itinerary['summary']['total_estimated_cost'],
-            'data' => json_encode($itinerary),
-        ]);
-        */
+        try {
+            // Generate title from categories or start date
+            $categoryNames = $itinerary['metadata']['categories'] ?? [];
+            $title = !empty($categoryNames)
+                ? 'Trip ' . implode(', ', array_slice($categoryNames, 0, 2))
+                : 'Trip ' . $itinerary['metadata']['start_date'];
+
+            // Determine activity level (use most common or first one)
+            $activityLevels = $itinerary['metadata']['activity_levels'] ?? [];
+            $activityLevel = !empty($activityLevels)
+                ? (is_array($activityLevels) ? reset($activityLevels) : $activityLevels)
+                : 'normal';
+
+            // Create itinerary record
+            $savedItinerary = Itinerary::create([
+                'user_id' => $userId,
+                'title' => $title,
+                'start_date' => $itinerary['metadata']['start_date'] ?? null,
+                'day_count' => $itinerary['metadata']['duration_days'] ?? 1,
+                'activity_level' => $activityLevel,
+                'preferences' => [
+                    'category_slugs' => $validated['category_slugs'] ?? [],
+                    'start_time' => $validated['start_time'] ?? '08:00',
+                    'start_location' => $validated['start_location'] ?? null,
+                    'start_lat' => $validated['start_lat'] ?? null,
+                    'start_lng' => $validated['start_lng'] ?? null,
+                    'activity_levels' => $validated['activity_levels'] ?? [],
+                ],
+                'generated_payload' => $itinerary,
+            ]);
+
+            // Save itinerary items from daily plans
+            $orderIndex = 0;
+            foreach ($itinerary['daily_plans'] ?? [] as $dayPlan) {
+                $day = $dayPlan['day'] ?? 1;
+
+                foreach ($dayPlan['places'] ?? [] as $scheduleItem) {
+                    $itemType = $this->determineItemType($scheduleItem);
+
+                    // Get item_id from different possible fields based on type
+                    $itemId = null;
+                    if ($itemType === 'restaurant' && isset($scheduleItem['restaurant']['id'])) {
+                        $itemId = $scheduleItem['restaurant']['id'];
+                    } elseif ($itemType === 'place' || $itemType === 'accommodation') {
+                        $itemId = $scheduleItem['place_id'] ?? $scheduleItem['id'] ?? null;
+                    }
+
+                    // Only save places, meals, and hotels (skip travel items and items without ID)
+                    if (in_array($itemType, ['place', 'restaurant', 'accommodation']) && $itemId) {
+                        ItineraryItem::create([
+                            'itinerary_id' => $savedItinerary->id,
+                            'day' => $day,
+                            'item_id' => $itemId,
+                            'item_type' => $itemType,
+                            'start_time' => $scheduleItem['start_time'] ?? null,
+                            'end_time' => $scheduleItem['end_time'] ?? null,
+                            'order_index' => $orderIndex++,
+                        ]);
+                    }
+                }
+
+                // Save hotel if exists
+                if (isset($dayPlan['hotel']) && $dayPlan['hotel'] && isset($dayPlan['hotel']['id'])) {
+                    ItineraryItem::create([
+                        'itinerary_id' => $savedItinerary->id,
+                        'day' => $day,
+                        'item_id' => $dayPlan['hotel']['id'],
+                        'item_type' => 'accommodation',
+                        'start_time' => null,
+                        'end_time' => null,
+                        'order_index' => $orderIndex++,
+                    ]);
+                }
+            }
+
+            Log::info('Itinerary saved successfully', [
+                'itinerary_id' => $savedItinerary->id,
+                'user_id' => $userId,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to save itinerary to database', [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+            // Don't throw exception - allow itinerary generation to continue even if save fails
+        }
+    }
+
+    /**
+     * Determine item type from schedule item
+     */
+    private function determineItemType(array $scheduleItem): string
+    {
+        $type = $scheduleItem['type'] ?? 'place';
+
+        if ($type === 'meal') {
+            return 'restaurant';
+        }
+
+        if ($type === 'place') {
+            $kind = $scheduleItem['kind'] ?? 'wisata';
+            if ($kind === 'hotel' || $kind === 'akomodasi') {
+                return 'accommodation';
+            }
+            return 'place';
+        }
+
+        return 'place';
     }
     /**
      * Show saved itineraries
@@ -456,13 +558,12 @@ class ItineraryController extends Controller
             return redirect()->route('login')
                 ->with('error', 'Silakan login untuk melihat itinerary Anda.');
         }
-        // Load user's saved itineraries
-        // $itineraries = Itinerary::where('user_id', $userId)
-        //     ->orderBy('created_at', 'desc')
-        //     ->paginate(10);
-        // return view('pages.itinerary.index', compact('itineraries'));
 
-        return view('pages.itinerary.index');
+        $itineraries = Itinerary::where('user_id', $userId)
+            ->orderByDesc('created_at')
+            ->paginate(10);
+
+        return view('pages.itinerary.index', compact('itineraries'));
     }
     /**
      * Show single itinerary detail

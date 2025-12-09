@@ -139,3 +139,6 @@ class AssignCategoriesToPlaces extends Command
 
 
 
+
+
+

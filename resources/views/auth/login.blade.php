@@ -10,14 +10,14 @@
         <p class="text-gray-600 mt-2">Masuk ke akunmu untuk mulai menjelajah</p>
     </div>
 
-    <form method="POST" action="{{ route('login') }}" class="space-y-6">
+    <form method="POST" action="{{ route('login.process') }}" class="space-y-6">
         @csrf
 
         {{-- Email --}}
         <div>
             <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input id="email" type="email" name="email" value="{{ old('email') }}" required autofocus
-                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:outline-none">
+                class="w-full px-4 py-3 border {{ $errors->has('email') ? 'border-red-300' : 'border-gray-300' }} rounded-lg focus:ring-2 focus:ring-green-600 focus:outline-none {{ $errors->has('email') ? 'focus:border-red-500' : '' }}">
             @error('email')
                 <p class="text-red-500 text-sm mt-1">{{ $message }}</p>
             @enderror
@@ -27,7 +27,7 @@
         <div>
             <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Kata Sandi</label>
             <input id="password" type="password" name="password" required
-                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:outline-none">
+                class="w-full px-4 py-3 border {{ $errors->has('password') ? 'border-red-300' : 'border-gray-300' }} rounded-lg focus:ring-2 focus:ring-green-600 focus:outline-none {{ $errors->has('password') ? 'focus:border-red-500' : '' }}">
             @error('password')
                 <p class="text-red-500 text-sm mt-1">{{ $message }}</p>
             @enderror
