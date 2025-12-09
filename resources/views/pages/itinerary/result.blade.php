@@ -405,8 +405,154 @@
 
             (function() {
                 const dailyPlans = @json($itinerary['daily_plans'] ?? []);
+                const ROUTE_CACHE_ENDPOINT = '/api/routes/cache';
 
-                function initMap(dayNumber, places, startPoint, returnTrip = null) {
+                async function fetchCachedRoute(start, end) {
+                    try {
+                        const params = new URLSearchParams({
+                            from_lat: start.lat,
+                            from_lng: start.lng,
+                            to_lat: end.lat,
+                            to_lng: end.lng,
+                        });
+                        const resp = await fetch(`${ROUTE_CACHE_ENDPOINT}?${params.toString()}`);
+                        if (!resp.ok) return null;
+                        return await resp.json();
+                    } catch (err) {
+                        console.warn('Failed to fetch cached route', err);
+                        return null;
+                    }
+                }
+
+                async function storeRouteCache(start, end, route) {
+                    try {
+                        await fetch(ROUTE_CACHE_ENDPOINT, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                            },
+                            body: JSON.stringify({
+                                from_lat: start.lat,
+                                from_lng: start.lng,
+                                to_lat: end.lat,
+                                to_lng: end.lng,
+                                distance_meters: route.summary.totalDistance,
+                                duration_seconds: route.summary.totalTime ?? null,
+                                coordinates: route.coordinates.map(c => [c.lat, c.lng]),
+                                provider: 'mapbox',
+                                profile: 'mapbox/driving',
+                                raw_response: route
+                            })
+                        });
+                    } catch (err) {
+                        console.warn('Failed to store route cache', err);
+                    }
+                }
+
+                function drawPolyline(map, coordinates, color) {
+                    if (!coordinates || coordinates.length === 0) return;
+
+                    L.polyline(coordinates.map(c => L.latLng(c[0], c[1])), {
+                        color: color,
+                        weight: 5,
+                        opacity: 0.8
+                    }).addTo(map);
+                }
+
+                function hideRoutingControl(segmentControl, map) {
+                    setTimeout(() => {
+                        const container = segmentControl.getContainer();
+                        if (container) {
+                            const panel = container.querySelector('.leaflet-routing-container');
+                            if (panel) panel.style.display = 'none';
+                            container.style.display = 'none';
+                        }
+
+                        // Remove default blue polyline drawn by LRM
+                        map.eachLayer(function(layer) {
+                            if (layer instanceof L.Polyline && layer.options.color === '#3388ff') {
+                                map.removeLayer(layer);
+                            }
+                        });
+                    }, 100);
+                }
+
+                async function buildSegment(map, segmentWaypoints, color) {
+                    const start = segmentWaypoints[0];
+                    const end = segmentWaypoints[1];
+
+                    // 1) Try cache first
+                    const cached = await fetchCachedRoute(start, end);
+                    if (cached && cached.coordinates?.length) {
+                        drawPolyline(map, cached.coordinates, color);
+                        return {
+                            distance: cached.distance_meters ?? 0
+                        };
+                    }
+
+                    // 2) Fallback to live routing (Mapbox -> OSRM)
+                    let router;
+                    if (MAPBOX_ACCESS_TOKEN && MAPBOX_ACCESS_TOKEN !== '' && L.Routing.mapbox) {
+                        router = L.Routing.mapbox(MAPBOX_ACCESS_TOKEN, {
+                            profile: 'mapbox/driving',
+                            language: 'id'
+                        });
+                    } else {
+                        router = L.Routing.osrmv1({
+                            serviceUrl: 'https://router.project-osrm.org/route/v1',
+                            profile: 'driving'
+                        });
+                    }
+
+                    return await new Promise(resolve => {
+                        const segmentControl = L.Routing.control({
+                            waypoints: segmentWaypoints,
+                            routeWhileDragging: false,
+                            showAlternatives: false,
+                            addWaypoints: false,
+                            createMarker: function() {
+                                return false;
+                            },
+                            router: router
+                        });
+
+                        segmentControl.addTo(map);
+                        hideRoutingControl(segmentControl, map);
+
+                        segmentControl.on('routesfound', async function(e) {
+                            const routes = e.routes;
+                            if (!routes || routes.length === 0) {
+                                resolve(null);
+                                return;
+                            }
+
+                            const route = routes[0];
+                            if (route.coordinates && route.coordinates.length > 0) {
+                                L.polyline(route.coordinates, {
+                                    color: color,
+                                    weight: 5,
+                                    opacity: 0.8
+                                }).addTo(map);
+                            }
+
+                            // Persist to cache for future requests
+                            if (route.summary && route.summary.totalDistance) {
+                                await storeRouteCache(start, end, route);
+                            }
+
+                            resolve({
+                                distance: route.summary.totalDistance ?? 0
+                            });
+                        });
+
+                        segmentControl.on('routingerror', function() {
+                            resolve(null);
+                        });
+                    });
+                }
+
+                async function initMap(dayNumber, places, startPoint, returnTrip = null) {
                     if (typeof L === 'undefined' || typeof L.Routing === 'undefined') {
                         console.log('Waiting for Leaflet Routing Machine...');
                         setTimeout(() => initMap(dayNumber, places, startPoint), 100);
@@ -480,102 +626,38 @@
                     }
 
                     if (waypoints.length >= 2) {
-                        const segmentColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4',
+                        const segmentColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899',
+                            '#06b6d4',
                             '#84cc16'
                         ];
                         let totalDistance = 0;
-                        let segmentsCompleted = 0;
 
                         for (let i = 0; i < waypoints.length - 1; i++) {
                             const segmentWaypoints = [waypoints[i], waypoints[i + 1]];
                             const color = segmentColors[i % segmentColors.length];
 
-                            let router;
-                            if (MAPBOX_ACCESS_TOKEN && MAPBOX_ACCESS_TOKEN !== '' && L.Routing.mapbox) {
-                                router = L.Routing.mapbox(MAPBOX_ACCESS_TOKEN, {
-                                    profile: 'mapbox/driving',
-                                    language: 'id'
-                                });
-                            } else {
-                                router = L.Routing.osrmv1({
-                                    serviceUrl: 'https://router.project-osrm.org/route/v1',
-                                    profile: 'driving'
-                                });
+                            const result = await buildSegment(map, segmentWaypoints, color);
+                            if (result && result.distance) {
+                                totalDistance += result.distance;
                             }
+                        }
 
-                            const segmentControl = L.Routing.control({
-                                waypoints: segmentWaypoints,
-                                routeWhileDragging: false,
-                                showAlternatives: false,
-                                addWaypoints: false,
-                                createMarker: function() {
-                                    return false;
-                                },
-                                router: router
-                            });
+                        const distanceKm = (totalDistance / 1000).toFixed(2);
+                        const durationMin = Math.round((parseFloat(distanceKm) / 40) * 60);
 
-                            segmentControl.addTo(map);
-
-                            setTimeout(() => {
-                                const container = segmentControl.getContainer();
-                                if (container) {
-                                    const panel = container.querySelector('.leaflet-routing-container');
-                                    if (panel) panel.style.display = 'none';
-                                    container.style.display = 'none';
-                                }
-                            }, 100);
-
-                            segmentControl.on('routesfound', function(e) {
-                                const routes = e.routes;
-                                if (routes && routes.length > 0) {
-                                    const route = routes[0];
-                                    const segmentDistanceKm = (route.summary.totalDistance / 1000).toFixed(2);
-                                    const segmentDurationMin = Math.round((parseFloat(segmentDistanceKm) / 40) *
-                                    60);
-
-                                    setTimeout(() => {
-                                        map.eachLayer(function(layer) {
-                                            if (layer instanceof L.Polyline && layer.options
-                                                .color === '#3388ff' &&
-                                                layer._latlngs && layer._latlngs.length === route
-                                                .coordinates.length) {
-                                                map.removeLayer(layer);
-                                            }
-                                        });
-                                    }, 100);
-
-                                    if (route.coordinates && route.coordinates.length > 0) {
-                                        L.polyline(route.coordinates, {
-                                            color: color,
-                                            weight: 5,
-                                            opacity: 0.8
-                                        }).addTo(map);
-                                    }
-
-                                    totalDistance += route.summary.totalDistance;
-                                    segmentsCompleted++;
-
-                                    if (segmentsCompleted === waypoints.length - 1) {
-                                        const distanceKm = (totalDistance / 1000).toFixed(2);
-                                        const durationMin = Math.round((parseFloat(distanceKm) / 40) * 60);
-
-                                        const infoEl = document.querySelector(`#map-day-${dayNumber}`).parentElement
-                                            .querySelector('.route-info');
-                                        if (infoEl) {
-                                            infoEl.innerHTML = `
-                                                <div class="flex items-center gap-2">
-                                                    <span class="text-lg">📏</span>
-                                                    <span>Total Jarak: <strong>${distanceKm} km</strong></span>
-                                                </div>
-                                                <div class="flex items-center gap-2">
-                                                    <span class="text-lg">⏱️</span>
-                                                    <span>Waktu Tempuh: <strong>${durationMin} menit</strong></span>
-                                                </div>
-                                            `;
-                                        }
-                                    }
-                                }
-                            });
+                        const infoEl = document.querySelector(`#map-day-${dayNumber}`).parentElement
+                            .querySelector('.route-info');
+                        if (infoEl) {
+                            infoEl.innerHTML = `
+                                <div class="flex items-center gap-2">
+                                    <span class="text-lg">📏</span>
+                                    <span>Total Jarak: <strong>${distanceKm} km</strong></span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-lg">⏱️</span>
+                                    <span>Waktu Tempuh: <strong>${durationMin} menit</strong></span>
+                                </div>
+                            `;
                         }
                     }
 

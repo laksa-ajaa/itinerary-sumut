@@ -20,8 +20,10 @@ class ItineraryService
     private const LUNCH_START_HOUR = 11; // 11 AM
     private const LUNCH_END_HOUR = 14;   // 2 PM
 
-    // Hotel threshold for overnight stay
+    // Hotel threshold for overnight stay when far from home
     private const HOTEL_THRESHOLD_KM = 15; // 15 km
+    // Force hotel if total travel in a day exceeds this
+    private const LONG_TRIP_HOTEL_THRESHOLD_KM = 50; // 50 km
 
     public function __construct(RouteService $routeService)
     {
@@ -57,6 +59,9 @@ class ItineraryService
             ->whereNotNull('latitude')
             ->whereNotNull('longitude')
             ->get()
+            ->filter(function ($place) {
+                return is_numeric($place->latitude) && is_numeric($place->longitude);
+            })
             ->keyBy('id');
 
         if ($allPlaces->isEmpty()) {
@@ -202,25 +207,50 @@ class ItineraryService
 
             // Get route geometry (with fallback)
             $routeGeometry = $this->getRouteGeometry($optimizedRoute, $currentStartPoint);
+            $dailyDistanceKm = $routeGeometry['distance_km'] ?? 0;
 
             // Build schedule with time allocation
             // For day 1, use startDateTime; for other days, use 8:00 AM
             $isLastDay = ($day === $durationDays);
+            $hasPlannedHotel = (!$isLastDay && $dailyDistanceKm > self::LONG_TRIP_HOTEL_THRESHOLD_KM);
+
             $schedule = $this->buildDailySchedule(
                 $optimizedRoute,
                 $currentDate,
                 $routeGeometry,
                 $currentStartPoint,
                 $startPoint, // Original start point (home)
-                $isLastDay
+                $isLastDay,
+                $hasPlannedHotel
             );
 
             // Lunch restaurant will be determined during schedule building
 
-            // Add hotel for overnight stay only if distance > 15km and not last day
+            // Hotel logic:
+            // - If daily travel > LONG_TRIP_HOTEL_THRESHOLD_KM (50 km) and not last day → must stay at nearest hotel to last place
+            // - Otherwise keep existing rule: if distance to home > HOTEL_THRESHOLD_KM and not last day → suggest hotel
+            // HOTEL LOGIC (FIXED)
             $hotel = null;
-            if (!$isLastDay && $hotels->isNotEmpty() && $optimizedRoute->isNotEmpty() && $startPoint) {
-                $lastPlace = $optimizedRoute->last();
+
+            $lastPlace = $optimizedRoute->last();
+
+            // Validate last place coordinates
+            if (!$lastPlace || !is_numeric($lastPlace->latitude) || !is_numeric($lastPlace->longitude)) {
+                Log::warning("Skipping hotel calculation due to invalid lastPlace coordinates", [
+                    'day' => $day,
+                    'lastPlace' => $lastPlace
+                ]);
+            } elseif (!$isLastDay && $hotels->isNotEmpty() && $startPoint) {
+
+                Log::info("Hotel distance check", [
+                    'last_lat' => $lastPlace->latitude,
+                    'last_lng' => $lastPlace->longitude,
+                    'home_lat' => $startPoint['lat'],
+                    'home_lng' => $startPoint['lng'],
+                ]);
+
+                $forceHotel = ($dailyDistanceKm > self::LONG_TRIP_HOTEL_THRESHOLD_KM);
+
                 $distanceToHome = $this->calculateDistance(
                     $lastPlace->latitude,
                     $lastPlace->longitude,
@@ -228,13 +258,13 @@ class ItineraryService
                     $startPoint['lng']
                 );
 
-                if ($distanceToHome > self::HOTEL_THRESHOLD_KM) {
-                    $hotel = $this->selectNearestHotel(
-                        $hotels,
-                        $lastPlace
-                    );
+                $needsHotelByDistance = ($distanceToHome > self::HOTEL_THRESHOLD_KM);
+
+                if ($forceHotel || $needsHotelByDistance) {
+                    $hotel = $this->selectNearestHotel($hotels, $lastPlace);
                 }
             }
+
 
             $dailyPlans[] = [
                 'day' => $day,
@@ -508,8 +538,15 @@ class ItineraryService
     /**
      * Build daily schedule with time slots
      */
-    private function buildDailySchedule(Collection $places, Carbon $date, array $routeGeometry, ?array $startPoint = null, ?array $originalStartPoint = null, bool $isLastDay = false): array
-    {
+    private function buildDailySchedule(
+        Collection $places,
+        Carbon $date,
+        array $routeGeometry,
+        ?array $startPoint = null,
+        ?array $originalStartPoint = null,
+        bool $isLastDay = false,
+        bool $hasPlannedHotel = false
+    ): array {
         $schedule = [];
         // Use the time from $date (already set with start time for day 1, or 8:00 for other days)
         $currentTime = $date->copy();
@@ -695,7 +732,7 @@ class ItineraryService
 
         // Add return trip logic based on hotel rules
         // Last day: ALWAYS return to home, regardless of distance
-        // Other days: Only return if distance <= 15km (otherwise hotel is already selected)
+        // Other days: Skip return if a hotel is planned/selected; otherwise return if close enough
         if ($places->isNotEmpty() && $originalStartPoint) {
             $lastPlace = $places->last();
 
@@ -716,12 +753,12 @@ class ItineraryService
                 // Last day: ALWAYS return to home
                 $shouldReturnHome = true;
                 $returnDescription = 'Pulang ke lokasi awal';
-            } elseif ($distanceKm <= self::HOTEL_THRESHOLD_KM) {
-                // Not last day, but distance <= 15km: return to home
+            } elseif (!$hasPlannedHotel && $distanceKm <= self::HOTEL_THRESHOLD_KM) {
+                // Not last day, no planned hotel, and close enough: return to home
                 $shouldReturnHome = true;
                 $returnDescription = 'Pulang ke lokasi awal';
             }
-            // If not last day and distance > 15km, hotel is already selected, so no return trip
+            // If not last day and either we planned a hotel or distance too far, skip return trip
 
             if ($shouldReturnHome) {
                 // Get duration from RouteService
@@ -835,18 +872,27 @@ class ItineraryService
     /**
      * Select nearest hotel to last place of the day
      */
-    private function selectNearestHotel(Collection $hotels, Place $lastPlace): ?Place
+    private function selectNearestHotel($hotels, $lastPlace)
     {
-        return $hotels->map(function ($hotel) use ($lastPlace) {
-            $hotel->temp_distance = $this->calculateDistance(
+        if (!$lastPlace || !is_numeric($lastPlace->latitude) || !is_numeric($lastPlace->longitude)) {
+            Log::warning("selectNearestHotel: invalid lastPlace coordinates", [
+                'place' => $lastPlace
+            ]);
+            return null;
+        }
+
+        return $hotels->filter(function ($hotel) {
+            return is_numeric($hotel->latitude) && is_numeric($hotel->longitude);
+        })->sortBy(function ($hotel) use ($lastPlace) {
+            return $this->calculateDistance(
                 $lastPlace->latitude,
                 $lastPlace->longitude,
                 $hotel->latitude,
                 $hotel->longitude
             );
-            return $hotel;
-        })->sortBy('temp_distance')->first();
+        })->first();
     }
+
 
     /**
      * Format hotel data
@@ -867,13 +913,24 @@ class ItineraryService
     /**
      * Calculate distance between two points (Haversine formula)
      */
-    private function calculateDistance(
-        float $lat1,
-        float $lng1,
-        float $lat2,
-        float $lng2
-    ): float {
-        $earthRadius = 6371; // km
+    private function calculateDistance($lat1, $lng1, $lat2, $lng2)
+    {
+        // Validate numeric values
+        if (
+            !is_numeric($lat1) || !is_numeric($lng1) ||
+            !is_numeric($lat2) || !is_numeric($lng2)
+        ) {
+            Log::warning("calculateDistance received non-numeric coordinates", [
+                'lat1' => $lat1,
+                'lng1' => $lng1,
+                'lat2' => $lat2,
+                'lng2' => $lng2,
+            ]);
+            return 0;
+        }
+
+        // Haversine formula
+        $earthRadius = 6371; // KM
 
         $dLat = deg2rad($lat2 - $lat1);
         $dLng = deg2rad($lng2 - $lng1);
@@ -886,6 +943,7 @@ class ItineraryService
 
         return $earthRadius * $c;
     }
+
 
     /**
      * Estimate daily cost

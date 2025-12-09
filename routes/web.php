@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\RouteCacheController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
@@ -92,6 +93,10 @@ Route::post('/api/recommend', function (Request $request) {
     $ids = $resp->json('place_ids') ?? [];
     return Place::whereIn('id', $ids)->get();
 });
+
+// Route cache endpoints (used by frontend routing to reduce Mapbox calls)
+Route::get('/api/routes/cache', [RouteCacheController::class, 'show']);
+Route::post('/api/routes/cache', [RouteCacheController::class, 'store'])->middleware('web');
 
 // Itinerary Routes (accessible to all users and guests)
 Route::get('/itinerary', [ItineraryController::class, 'showPreferences'])->name('itinerary.preferences');
