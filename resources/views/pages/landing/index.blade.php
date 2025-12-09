@@ -6,8 +6,8 @@
 
     {{-- Hero Section --}}
     <section id="home" class="relative bg-cover bg-center h-[90vh]"
-        style="background-image: url('{{ asset('assets/img/hero-banner.svg') }}')">
-        <div class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        style="background-image: linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url('{{ asset('assets/img/hero.png') }}')">
+        <div class="absolute inset-0 flex items-center justify-center">
             <div class="text-center text-white px-6">
                 <h1 class="text-5xl md:text-6xl font-bold mb-4">Temukan Keindahan Sumatera Utara</h1>
                 <p class="text-lg md:text-xl mb-8">Bangun itinerary impianmu dengan rekomendasi AI cerdas dan peta
