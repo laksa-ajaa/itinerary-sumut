@@ -129,11 +129,12 @@
                     Minat Wisata (pilih minimal 1):
                 </label>
 
-                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div class="grid grid-cols-3 gap-4">
                     @foreach ($categories as $category)
                         <label
                             class="flex items-center p-4 border-2 border-gray-200 rounded-lg cursor-pointer hover:border-green-500 hover:bg-green-50 transition">
                             <input type="checkbox" name="category_slugs[]" value="{{ $category['slug'] }}"
+                                {{ in_array($category['slug'], old('category_slugs', [])) ? 'checked' : '' }}
                                 class="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-green-500">
                             <span class="ml-3 text-gray-700 font-medium">
                                 @if (isset($category['emoji']))
@@ -207,6 +208,7 @@
                 const mapElement = document.getElementById('start-map');
                 const latInput = document.getElementById('start_lat');
                 const lngInput = document.getElementById('start_lng');
+                const startInput = document.getElementById('start_location');
 
                 if (!mapElement || !latInput || !lngInput) {
                     console.log('Map elements not found');
@@ -273,7 +275,10 @@
                     if (mapInstance) {
                         mapInstance.setView([lat, lng], 13);
                     }
-                    updateLatLng({ lat, lng });
+                    updateLatLng({
+                        lat,
+                        lng
+                    });
                     statusEl.textContent = 'Lokasi GPS berhasil diambil.';
                     buttonEl.disabled = false;
                     buttonEl.classList.remove('opacity-70', 'cursor-not-allowed');
@@ -313,10 +318,41 @@
                     return;
                 }
 
+                // Get old values if they exist
+                const oldStartDate = startDateInput.value;
+                const oldEndDate = endDateInput.value;
+                const oldDuration = durationInput.value;
+                const oldTravelDates = dateInput.value;
+                let defaultDate = null;
+
+                if (oldStartDate && oldEndDate) {
+                    defaultDate = [oldStartDate, oldEndDate];
+                    // Format travel_dates display if not already set
+                    if (!oldTravelDates && dateInput) {
+                        const formatDateForDisplay = (dateStr) => {
+                            const date = new Date(dateStr);
+                            const year = date.getFullYear();
+                            const month = String(date.getMonth() + 1).padStart(2, '0');
+                            const day = String(date.getDate()).padStart(2, '0');
+                            return `${year}-${month}-${day}`;
+                        };
+                        dateInput.value =
+                            `${formatDateForDisplay(oldStartDate)} sampai ${formatDateForDisplay(oldEndDate)}`;
+                    }
+                    // Show duration display if old values exist
+                    if (oldDuration && durationDisplay) {
+                        const nights = parseInt(oldDuration) - 1;
+                        durationDisplay.classList.remove('hidden');
+                        durationDisplay.querySelector('span').textContent =
+                            `Durasi: ${oldDuration} Hari${nights > 0 ? ' (' + nights + ' Malam)' : ''}`;
+                    }
+                }
+
                 flatpickr(dateInput, {
                     mode: "range",
                     minDate: "today",
                     dateFormat: "Y-m-d",
+                    defaultDate: defaultDate,
                     locale: {
                         rangeSeparator: " sampai "
                     },
@@ -328,7 +364,7 @@
                             // Calculate duration in days (inclusive)
                             const timeDiff = endDate.getTime() - startDate.getTime();
                             const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24)) +
-                            1; // +1 to include both start and end day
+                                1; // +1 to include both start and end day
 
                             // Format dates for hidden inputs (YYYY-MM-DD)
                             const formatDate = (date) => {

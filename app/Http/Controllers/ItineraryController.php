@@ -479,14 +479,12 @@ class ItineraryController extends Controller
 
                     // Get item_id from different possible fields based on type
                     $itemId = null;
-                    if ($itemType === 'restaurant' && isset($scheduleItem['restaurant']['id'])) {
-                        $itemId = $scheduleItem['restaurant']['id'];
-                    } elseif ($itemType === 'place' || $itemType === 'accommodation') {
+                    if ($itemType === 'place') {
                         $itemId = $scheduleItem['place_id'] ?? $scheduleItem['id'] ?? null;
                     }
 
-                    // Only save places, meals, and hotels (skip travel items and items without ID)
-                    if (in_array($itemType, ['place', 'restaurant', 'accommodation']) && $itemId) {
+                    // Only save places (skip travel items, meals, hotels, and items without ID)
+                    if ($itemType === 'place' && $itemId) {
                         ItineraryItem::create([
                             'itinerary_id' => $savedItinerary->id,
                             'day' => $day,
@@ -497,19 +495,6 @@ class ItineraryController extends Controller
                             'order_index' => $orderIndex++,
                         ]);
                     }
-                }
-
-                // Save hotel if exists
-                if (isset($dayPlan['hotel']) && $dayPlan['hotel'] && isset($dayPlan['hotel']['id'])) {
-                    ItineraryItem::create([
-                        'itinerary_id' => $savedItinerary->id,
-                        'day' => $day,
-                        'item_id' => $dayPlan['hotel']['id'],
-                        'item_type' => 'accommodation',
-                        'start_time' => null,
-                        'end_time' => null,
-                        'order_index' => $orderIndex++,
-                    ]);
                 }
             }
 
@@ -533,19 +518,12 @@ class ItineraryController extends Controller
     {
         $type = $scheduleItem['type'] ?? 'place';
 
-        if ($type === 'meal') {
-            return 'restaurant';
-        }
-
+        // Only return 'place' for place type, ignore meals, hotels, and travel
         if ($type === 'place') {
-            $kind = $scheduleItem['kind'] ?? 'wisata';
-            if ($kind === 'hotel' || $kind === 'akomodasi') {
-                return 'accommodation';
-            }
             return 'place';
         }
 
-        return 'place';
+        return 'other'; // For travel, meal, hotel, etc.
     }
     /**
      * Show saved itineraries

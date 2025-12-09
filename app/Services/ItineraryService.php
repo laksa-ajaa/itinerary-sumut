@@ -16,22 +16,13 @@ class ItineraryService
     private const MAX_VISIT = 300;  // 5 hours
     private const MIN_VISIT = 45;   // 45 minutes
 
-    // Lunch window
-    private const LUNCH_START_HOUR = 11; // 11 AM
-    private const LUNCH_END_HOUR = 14;   // 2 PM
-
-    // Hotel threshold for overnight stay when far from home
-    private const HOTEL_THRESHOLD_KM = 15; // 15 km
-    // Force hotel if total travel in a day exceeds this
-    private const LONG_TRIP_HOTEL_THRESHOLD_KM = 50; // 50 km
-
     public function __construct(RouteService $routeService)
     {
         $this->routeService = $routeService;
     }
 
     /**
-     * Generate natural itinerary with routing and hotel recommendations
+     * Generate natural itinerary with routing optimization
      */
     public function generateItinerary(
         ?int $userId,
@@ -68,11 +59,6 @@ class ItineraryService
             return $this->emptyItinerary($startDate, $durationDays);
         }
 
-        // Get hotel recommendations if multi-day trip
-        $hotels = $durationDays > 1
-            ? $this->getHotelRecommendations($allPlaces, $durationDays - 1)
-            : collect();
-
         // Build start point
         $startPoint = null;
         if ($startLat && $startLng) {
@@ -88,7 +74,6 @@ class ItineraryService
             $placesByDay,
             $activityLevels,
             $allPlaces,
-            $hotels,
             $durationDays,
             $startPoint,
             $startDateTime
@@ -101,7 +86,6 @@ class ItineraryService
                 'end_date' => $startDate->copy()->addDays($durationDays - 1)->format('Y-m-d'),
                 'start_time' => $startTime,
                 'total_places' => count($allPlaceIds),
-                'total_hotels' => $hotels->count(),
                 'activity_levels' => $activityLevels,
                 'categories' => $categoryNames,
                 'start_location' => $startLocation,
@@ -125,45 +109,12 @@ class ItineraryService
     }
 
     /**
-     * Get hotel recommendations near places
-     */
-    private function getHotelRecommendations(
-        Collection $places,
-        int $nightsNeeded
-    ): Collection {
-        // Calculate centroid of all places for each day
-        $centerLat = $places->avg('latitude');
-        $centerLng = $places->avg('longitude');
-
-        // Find hotels near the center
-        $hotels = Place::where('kind', 'hotel')
-            ->whereNotNull('latitude')
-            ->whereNotNull('longitude')
-            ->get()
-            ->map(function ($hotel) use ($centerLat, $centerLng) {
-                $hotel->distance_from_center = $this->calculateDistance(
-                    $centerLat,
-                    $centerLng,
-                    $hotel->latitude,
-                    $hotel->longitude
-                );
-                return $hotel;
-            })
-            ->sortBy('distance_from_center')
-            ->take($nightsNeeded);
-
-        return $hotels;
-    }
-
-
-    /**
      * Build daily itinerary with routing optimization
      */
     private function buildDailyItinerary(
         array $placesByDay,
         array $activityLevels,
         Collection $allPlaces,
-        Collection $hotels,
         int $durationDays,
         ?array $startPoint,
         Carbon $startDateTime
@@ -207,12 +158,10 @@ class ItineraryService
 
             // Get route geometry (with fallback)
             $routeGeometry = $this->getRouteGeometry($optimizedRoute, $currentStartPoint);
-            $dailyDistanceKm = $routeGeometry['distance_km'] ?? 0;
 
             // Build schedule with time allocation
             // For day 1, use startDateTime; for other days, use 8:00 AM
             $isLastDay = ($day === $durationDays);
-            $hasPlannedHotel = (!$isLastDay && $dailyDistanceKm > self::LONG_TRIP_HOTEL_THRESHOLD_KM);
 
             $schedule = $this->buildDailySchedule(
                 $optimizedRoute,
@@ -220,51 +169,8 @@ class ItineraryService
                 $routeGeometry,
                 $currentStartPoint,
                 $startPoint, // Original start point (home)
-                $isLastDay,
-                $hasPlannedHotel
+                $isLastDay
             );
-
-            // Lunch restaurant will be determined during schedule building
-
-            // Hotel logic:
-            // - If daily travel > LONG_TRIP_HOTEL_THRESHOLD_KM (50 km) and not last day → must stay at nearest hotel to last place
-            // - Otherwise keep existing rule: if distance to home > HOTEL_THRESHOLD_KM and not last day → suggest hotel
-            // HOTEL LOGIC (FIXED)
-            $hotel = null;
-
-            $lastPlace = $optimizedRoute->last();
-
-            // Validate last place coordinates
-            if (!$lastPlace || !is_numeric($lastPlace->latitude) || !is_numeric($lastPlace->longitude)) {
-                Log::warning("Skipping hotel calculation due to invalid lastPlace coordinates", [
-                    'day' => $day,
-                    'lastPlace' => $lastPlace
-                ]);
-            } elseif (!$isLastDay && $hotels->isNotEmpty() && $startPoint) {
-
-                Log::info("Hotel distance check", [
-                    'last_lat' => $lastPlace->latitude,
-                    'last_lng' => $lastPlace->longitude,
-                    'home_lat' => $startPoint['lat'],
-                    'home_lng' => $startPoint['lng'],
-                ]);
-
-                $forceHotel = ($dailyDistanceKm > self::LONG_TRIP_HOTEL_THRESHOLD_KM);
-
-                $distanceToHome = $this->calculateDistance(
-                    $lastPlace->latitude,
-                    $lastPlace->longitude,
-                    $startPoint['lat'],
-                    $startPoint['lng']
-                );
-
-                $needsHotelByDistance = ($distanceToHome > self::HOTEL_THRESHOLD_KM);
-
-                if ($forceHotel || $needsHotelByDistance) {
-                    $hotel = $this->selectNearestHotel($hotels, $lastPlace);
-                }
-            }
-
 
             $dailyPlans[] = [
                 'day' => $day,
@@ -273,13 +179,12 @@ class ItineraryService
                 'start_time' => $currentDate->format('H:i'),
                 'start_point' => $currentStartPoint,
                 'places' => $schedule,
-                'hotel' => $hotel ? $this->formatHotel($hotel) : null,
                 'route_geometry' => $routeGeometry,
                 'activity_level' => $activityLevels[$dayKey] ?? 'normal',
                 'stats' => [
                     'total_places' => count(array_filter($schedule, fn($s) => $s['type'] === 'place')),
                     'total_distance' => $routeGeometry['distance_km'] ?? 0,
-                    'estimated_cost' => $this->estimateDailyCost($schedule, $hotel),
+                    'estimated_cost' => $this->estimateDailyCost($schedule),
                 ]
             ];
         }
@@ -289,26 +194,11 @@ class ItineraryService
 
     /**
      * Get starting point for a specific day
-     * Day 1: starts from initial start point
-     * Day 2+: starts from hotel if available, otherwise from initial start point
+     * Always starts from initial start point
      */
     private function getDayStartPoint(int $day, ?array $initialStart, array $dailyPlans): ?array
     {
-        // Day 1 always starts from initial start point
-        if ($day === 1) {
-            return $initialStart;
-        }
-
-        // Day 2+: check if previous day has hotel
-        if ($day > 1 && isset($dailyPlans[$day - 2]['hotel'])) {
-            $prevHotel = $dailyPlans[$day - 2]['hotel'];
-            return [
-                'lat' => $prevHotel['latitude'],
-                'lng' => $prevHotel['longitude']
-            ];
-        }
-
-        // If no hotel, return to initial start point
+        // Always start from initial start point
         return $initialStart;
     }
 
@@ -499,43 +389,6 @@ class ItineraryService
     }
 
     /**
-     * Check if lunch should be inserted based on 3 rules
-     */
-    private function shouldInsertLunch(Carbon $currentTime, bool $isLunchAdded, ?int $travelDuration = null, ?int $visitDuration = null): bool
-    {
-        if ($isLunchAdded) {
-            return false;
-        }
-
-        $currentHour = $currentTime->hour;
-        $currentMinute = $currentTime->minute;
-        $currentTimeMinutes = $currentHour * 60 + $currentMinute;
-
-        // Rule 1: If start time is in lunch window (11:00-14:00) → lunch first
-        if ($currentTimeMinutes >= (self::LUNCH_START_HOUR * 60) && $currentTimeMinutes <= (self::LUNCH_END_HOUR * 60)) {
-            return true;
-        }
-
-        // Rule 2: If current time is in lunch window → lunch
-        if ($currentHour >= self::LUNCH_START_HOUR && $currentHour < self::LUNCH_END_HOUR) {
-            return true;
-        }
-
-        // Rule 3: If next visit would make lunch pass → lunch first
-        if ($travelDuration !== null && $visitDuration !== null) {
-            $forecastEndMinutes = $currentTimeMinutes + $travelDuration + $visitDuration;
-            $lunchEndMinutes = self::LUNCH_END_HOUR * 60;
-
-            // If forecast end is after lunch window, but we're before it, insert lunch
-            if ($currentTimeMinutes < (self::LUNCH_START_HOUR * 60) && $forecastEndMinutes > $lunchEndMinutes) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * Build daily schedule with time slots
      */
     private function buildDailySchedule(
@@ -544,38 +397,15 @@ class ItineraryService
         array $routeGeometry,
         ?array $startPoint = null,
         ?array $originalStartPoint = null,
-        bool $isLastDay = false,
-        bool $hasPlannedHotel = false
+        bool $isLastDay = false
     ): array {
         $schedule = [];
         // Use the time from $date (already set with start time for day 1, or 8:00 for other days)
         $currentTime = $date->copy();
-        $isLunchAdded = false;
-        $lunchRestaurant = null;
 
         // Calculate dynamic visit duration based on place count
         $placeCount = $places->count();
         $visitDuration = $this->calculateVisitDuration($placeCount);
-
-        // Rule 1: If start time is in lunch window → lunch first
-        if ($this->shouldInsertLunch($currentTime, $isLunchAdded)) {
-            $lunchRestaurant = $this->getNearbyRestaurant(null, $schedule);
-            $schedule[] = [
-                'type' => 'meal',
-                'meal_type' => 'lunch',
-                'start_time' => $currentTime->format('H:i'),
-                'end_time' => $currentTime->copy()->addHour()->format('H:i'),
-                'description' => 'Istirahat makan siang',
-                'restaurant' => $lunchRestaurant ? [
-                    'id' => $lunchRestaurant->id,
-                    'name' => $lunchRestaurant->name,
-                    'rating_avg' => $lunchRestaurant->rating_avg ?? 0,
-                    'price' => $lunchRestaurant->price ?? 0,
-                ] : null,
-            ];
-            $currentTime->addHour();
-            $isLunchAdded = true;
-        }
 
         foreach ($places as $index => $place) {
 
@@ -645,30 +475,6 @@ class ItineraryService
                 $currentTime = $travelEndTime;
             }
 
-            // Check lunch rules (Rule 2 & 3)
-            if ($this->shouldInsertLunch($currentTime, $isLunchAdded, $travelDuration, $visitDuration)) {
-                // Find nearby restaurant for lunch from places already visited
-                if (!$lunchRestaurant) {
-                    $lunchRestaurant = $this->getNearbyRestaurant($place, $schedule);
-                }
-
-                $schedule[] = [
-                    'type' => 'meal',
-                    'meal_type' => 'lunch',
-                    'start_time' => $currentTime->format('H:i'),
-                    'end_time' => $currentTime->copy()->addHour()->format('H:i'),
-                    'description' => 'Istirahat makan siang',
-                    'restaurant' => $lunchRestaurant ? [
-                        'id' => $lunchRestaurant->id,
-                        'name' => $lunchRestaurant->name,
-                        'rating_avg' => $lunchRestaurant->rating_avg ?? 0,
-                        'price' => $lunchRestaurant->price ?? 0,
-                    ] : null,
-                ];
-                $currentTime->addHour();
-                $isLunchAdded = true;
-            }
-
             $endTime = $currentTime->copy()->addMinutes($visitDuration);
 
             // No time limit - allow natural completion
@@ -690,49 +496,9 @@ class ItineraryService
             $currentTime = $endTime;
         }
 
-        // Ensure lunch is always added (if not added yet)
-        // This handles edge cases where lunch might have been missed
-        if (!$isLunchAdded) {
-            // Find nearby restaurant for lunch from places already visited
-            $nearPlace = $places->isNotEmpty() ? $places->last() : $places->first();
-            $lunchRestaurant = $this->getNearbyRestaurant($nearPlace, $schedule);
-
-            // Insert lunch at appropriate time
-            // If we're before lunch window, schedule it at start of window (11:00)
-            // If we're in or past lunch window, use current time
-            $lunchTime = $currentTime->copy();
-            if ($lunchTime->hour < self::LUNCH_START_HOUR) {
-                // Schedule at start of lunch window
-                $lunchTime->setTime(self::LUNCH_START_HOUR, 0);
-            }
-            // Otherwise use current time (we're in or past the window)
-
-            $schedule[] = [
-                'type' => 'meal',
-                'meal_type' => 'lunch',
-                'start_time' => $lunchTime->format('H:i'),
-                'end_time' => $lunchTime->copy()->addHour()->format('H:i'),
-                'description' => 'Istirahat makan siang',
-                'restaurant' => $lunchRestaurant ? [
-                    'id' => $lunchRestaurant->id,
-                    'name' => $lunchRestaurant->name,
-                    'rating_avg' => $lunchRestaurant->rating_avg ?? 0,
-                    'price' => $lunchRestaurant->price ?? 0,
-                ] : null,
-            ];
-            // Update currentTime if lunch was scheduled for future
-            if ($lunchTime->gt($currentTime)) {
-                $currentTime = $lunchTime->copy()->addHour();
-            } else {
-                // If lunch was at current time or past, advance current time by 1 hour
-                $currentTime->addHour();
-            }
-            $isLunchAdded = true;
-        }
-
-        // Add return trip logic based on hotel rules
+        // Add return trip logic
         // Last day: ALWAYS return to home, regardless of distance
-        // Other days: Skip return if a hotel is planned/selected; otherwise return if close enough
+        // Other days: Always return to home
         if ($places->isNotEmpty() && $originalStartPoint) {
             $lastPlace = $places->last();
 
@@ -743,50 +509,33 @@ class ItineraryService
                 $originalStartPoint['lat'],
                 $originalStartPoint['lng']
             );
+
+            // Get duration from RouteService
+            $durationMinutes = $returnTravelInfo['duration_minutes'];
             $distanceKm = $returnTravelInfo['distance_km'];
 
-            // Determine if we should return to home
-            $shouldReturnHome = false;
-            $returnDescription = '';
+            $returnStartTime = $currentTime->copy();
+            $returnEndTime = $currentTime->copy()->addMinutes($durationMinutes);
 
-            if ($isLastDay) {
-                // Last day: ALWAYS return to home
-                $shouldReturnHome = true;
-                $returnDescription = 'Pulang ke lokasi awal';
-            } elseif (!$hasPlannedHotel && $distanceKm <= self::HOTEL_THRESHOLD_KM) {
-                // Not last day, no planned hotel, and close enough: return to home
-                $shouldReturnHome = true;
-                $returnDescription = 'Pulang ke lokasi awal';
-            }
-            // If not last day and either we planned a hotel or distance too far, skip return trip
-
-            if ($shouldReturnHome) {
-                // Get duration from RouteService
-                $durationMinutes = $returnTravelInfo['duration_minutes'];
-
-                $returnStartTime = $currentTime->copy();
-                $returnEndTime = $currentTime->copy()->addMinutes($durationMinutes);
-
-                $schedule[] = [
-                    'type' => 'travel',
-                    'start_time' => $returnStartTime->format('H:i'),
-                    'end_time' => $returnEndTime->format('H:i'),
-                    'duration_minutes' => $durationMinutes,
-                    'distance_km' => round($distanceKm, 2),
-                    'from' => [
-                        'name' => $lastPlace->name,
-                        'latitude' => $lastPlace->latitude,
-                        'longitude' => $lastPlace->longitude,
-                    ],
-                    'to' => [
-                        'name' => 'Lokasi Awal',
-                        'latitude' => $originalStartPoint['lat'],
-                        'longitude' => $originalStartPoint['lng'],
-                    ],
-                    'description' => $returnDescription,
-                    'is_return' => true, // Flag to identify return trip
-                ];
-            }
+            $schedule[] = [
+                'type' => 'travel',
+                'start_time' => $returnStartTime->format('H:i'),
+                'end_time' => $returnEndTime->format('H:i'),
+                'duration_minutes' => $durationMinutes,
+                'distance_km' => round($distanceKm, 2),
+                'from' => [
+                    'name' => $lastPlace->name,
+                    'latitude' => $lastPlace->latitude,
+                    'longitude' => $lastPlace->longitude,
+                ],
+                'to' => [
+                    'name' => 'Lokasi Awal',
+                    'latitude' => $originalStartPoint['lat'],
+                    'longitude' => $originalStartPoint['lng'],
+                ],
+                'description' => 'Pulang ke lokasi awal',
+                'is_return' => true, // Flag to identify return trip
+            ];
         }
 
         return $schedule;
@@ -805,110 +554,6 @@ class ItineraryService
         );
     }
 
-
-    /**
-     * Get nearby restaurant for lunch from places already visited in itinerary
-     */
-    private function getNearbyRestaurant(?Place $nearPlace = null, array $schedule = []): ?Place
-    {
-        // Get all places already visited from schedule
-        $visitedPlaces = [];
-        foreach ($schedule as $item) {
-            if ($item['type'] === 'place' && isset($item['latitude']) && isset($item['longitude'])) {
-                $visitedPlaces[] = [
-                    'latitude' => $item['latitude'],
-                    'longitude' => $item['longitude'],
-                ];
-            }
-        }
-
-        // If no visited places yet, use the provided nearPlace
-        if (empty($visitedPlaces) && $nearPlace) {
-            $visitedPlaces[] = [
-                'latitude' => $nearPlace->latitude,
-                'longitude' => $nearPlace->longitude,
-            ];
-        }
-
-        // If still no reference point, return null
-        if (empty($visitedPlaces)) {
-            return null;
-        }
-
-        // Get all restaurants
-        $restaurants = Place::where('kind', 'kuliner')
-            ->whereNotNull('latitude')
-            ->whereNotNull('longitude')
-            ->get();
-
-        if ($restaurants->isEmpty()) {
-            return null;
-        }
-
-        // Find restaurant closest to any visited place
-        $bestRestaurant = null;
-        $minDistance = PHP_FLOAT_MAX;
-
-        foreach ($restaurants as $restaurant) {
-            foreach ($visitedPlaces as $visitedPlace) {
-                $distance = $this->calculateDistance(
-                    $visitedPlace['latitude'],
-                    $visitedPlace['longitude'],
-                    $restaurant->latitude,
-                    $restaurant->longitude
-                );
-
-                if ($distance < $minDistance) {
-                    $minDistance = $distance;
-                    $bestRestaurant = $restaurant;
-                }
-            }
-        }
-
-        return $bestRestaurant;
-    }
-
-
-    /**
-     * Select nearest hotel to last place of the day
-     */
-    private function selectNearestHotel($hotels, $lastPlace)
-    {
-        if (!$lastPlace || !is_numeric($lastPlace->latitude) || !is_numeric($lastPlace->longitude)) {
-            Log::warning("selectNearestHotel: invalid lastPlace coordinates", [
-                'place' => $lastPlace
-            ]);
-            return null;
-        }
-
-        return $hotels->filter(function ($hotel) {
-            return is_numeric($hotel->latitude) && is_numeric($hotel->longitude);
-        })->sortBy(function ($hotel) use ($lastPlace) {
-            return $this->calculateDistance(
-                $lastPlace->latitude,
-                $lastPlace->longitude,
-                $hotel->latitude,
-                $hotel->longitude
-            );
-        })->first();
-    }
-
-
-    /**
-     * Format hotel data
-     */
-    private function formatHotel(Place $hotel): array
-    {
-        return [
-            'id' => $hotel->id,
-            'name' => $hotel->name,
-            'latitude' => $hotel->latitude,
-            'longitude' => $hotel->longitude,
-            'price' => $hotel->price ?? 0,
-            'rating_avg' => $hotel->rating_avg ?? 0,
-            'description' => $hotel->description,
-        ];
-    }
 
     /**
      * Calculate distance between two points (Haversine formula)
@@ -948,7 +593,7 @@ class ItineraryService
     /**
      * Estimate daily cost
      */
-    private function estimateDailyCost(array $schedule, ?array $hotel): int
+    private function estimateDailyCost(array $schedule): int
     {
         $total = 0;
 
@@ -957,13 +602,6 @@ class ItineraryService
                 $total += $item['price'] ?? 0;
             }
         }
-
-        if ($hotel) {
-            $total += $hotel['price'] ?? 0;
-        }
-
-        // Add estimated meal costs
-        $total += 150000; // ~50k per meal x 3
 
         return $total;
     }
@@ -1002,7 +640,6 @@ class ItineraryService
                 'start_date' => $startDate->format('Y-m-d'),
                 'end_date' => $startDate->copy()->addDays($durationDays - 1)->format('Y-m-d'),
                 'total_places' => 0,
-                'total_hotels' => 0,
             ],
             'daily_plans' => [],
             'summary' => [

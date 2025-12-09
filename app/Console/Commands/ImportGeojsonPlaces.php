@@ -292,19 +292,8 @@ class ImportGeojsonPlaces extends Command
             }
         }
 
-        // 6. Aktivitas & Event (stadium, gym, sports_centre, dll)
-        $activityTags = ['stadium', 'gym', 'sports_centre', 'bowling_alley', 'amusement_park'];
-        if ($this->hasAnyTag($properties, $activityTags)) {
-            if (isset($categories['aktivitas-event'])) {
-                $categoryIds[] = $categories['aktivitas-event']->id;
-            }
-        }
-
         // Default: jika tidak ada yang match, assign ke "Aktivitas & Event" dan "Hiburan & Lifestyle"
         if (empty($categoryIds)) {
-            if (isset($categories['aktivitas-event'])) {
-                $categoryIds[] = $categories['aktivitas-event']->id;
-            }
             if (isset($categories['hiburan-lifestyle'])) {
                 $categoryIds[] = $categories['hiburan-lifestyle']->id;
             }

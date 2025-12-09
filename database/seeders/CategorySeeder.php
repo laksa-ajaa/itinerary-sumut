@@ -50,14 +50,6 @@ class CategorySeeder extends Seeder
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
-            [
-                'slug' => 'aktivitas-event',
-                'name' => 'Aktivitas & Event',
-                'emoji' => '🚴',
-                // 'description' => 'Kegiatan olahraga, event, dan aktivitas khusus',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ],
         ]);
     }
 }

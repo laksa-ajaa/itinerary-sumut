@@ -114,7 +114,7 @@
             {{-- Info Box --}}
             <div class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <p class="text-blue-800 text-sm">
-                    <strong>Petunjuk:</strong> Pilih tingkat aktivitas dan tempat wisata untuk setiap hari perjalanan Anda.
+                    <strong>Petunjuk:</strong> Pilih tempat wisata untuk setiap hari perjalanan Anda. Tingkat aktivitas akan otomatis ditentukan berdasarkan jumlah wisata yang dipilih.
                     <br>
                     <strong>Santai:</strong> 1-3 wisata | <strong>Normal:</strong> 4-5 wisata | <strong>Padat:</strong> 5+
                     wisata
@@ -139,29 +139,18 @@
                         <div class="flex items-center justify-between mb-6">
                             <h2 class="text-2xl font-bold text-green-700">Hari {{ $day }}</h2>
                             <div class="flex items-center gap-4">
-                                {{-- Activity Level per Hari --}}
+                                {{-- Activity Level per Hari (Auto) --}}
                                 <div class="flex items-center gap-2">
-                                    <label for="activity_level_day_{{ $day }}"
-                                        class="text-sm font-medium text-gray-700">
+                                    <span class="text-sm font-medium text-gray-700">
                                         Tingkat Aktivitas:
-                                    </label>
-                                    <select name="activity_levels[{{ $day }}]"
-                                        id="activity_level_day_{{ $day }}"
-                                        class="activity-selector px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:outline-none"
-                                        data-day="{{ $day }}">
-                                        <option value="santai"
-                                            {{ old("activity_levels.{$day}", $day == 1 ? 'normal' : 'normal') === 'santai' ? 'selected' : '' }}>
-                                            Santai (1-3 wisata)
-                                        </option>
-                                        <option value="normal"
-                                            {{ old("activity_levels.{$day}", $day == 1 ? 'normal' : 'normal') === 'normal' ? 'selected' : '' }}>
-                                            Normal (4-5 wisata)
-                                        </option>
-                                        <option value="padat"
-                                            {{ old("activity_levels.{$day}", $day == 1 ? 'normal' : 'normal') === 'padat' ? 'selected' : '' }}>
-                                            Padat (5+ wisata)
-                                        </option>
-                                    </select>
+                                    </span>
+                                    <span id="activity-level-display-day-{{ $day }}"
+                                        class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium">
+                                        Belum dipilih
+                                    </span>
+                                    {{-- Hidden input untuk activity level --}}
+                                    <input type="hidden" name="activity_levels[{{ $day }}]"
+                                        id="activity_level_day_{{ $day }}" value="">
                                 </div>
                                 <div class="text-sm text-gray-600">
                                     <span
@@ -300,29 +289,14 @@
             const form = document.getElementById('placesForm');
             const durationDays = {{ $durationDays ?? 1 }};
 
-            // Activity limits
-            const activityLimits = {
-                'santai': {
-                    min: 1,
-                    max: 3
-                },
-                'normal': {
-                    min: 4,
-                    max: 5
-                },
-                'padat': {
-                    min: 5,
-                    max: 999
-                }
-            };
-
             // Initialize each day
             for (let day = 1; day <= durationDays; day++) {
                 initDay(day);
             }
 
             function initDay(day) {
-                const activitySelect = document.getElementById(`activity_level_day_${day}`);
+                const activityInput = document.getElementById(`activity_level_day_${day}`);
+                const activityDisplay = document.getElementById(`activity-level-display-day-${day}`);
                 const checkboxes = Array.from(document.querySelectorAll(`.place-checkbox-day-${day}`));
                 const searchInput = document.getElementById(`search-places-day-${day}`);
                 const countEl = document.querySelector(`.selection-count-day-${day}`);
@@ -330,6 +304,34 @@
                 const noResultsEl = document.getElementById(`no-results-day-${day}`);
                 const allPlaceItems = Array.from(document.querySelectorAll(`.place-item-day-${day}`));
                 const selectedUl = document.querySelector(`.selected-places-day-${day} ul`);
+
+                // Determine activity level based on count
+                function getActivityLevel(count) {
+                    if (count === 0) {
+                        return { level: '', label: 'Belum dipilih', color: 'bg-gray-100 text-gray-700' };
+                    } else if (count >= 1 && count <= 3) {
+                        return { level: 'santai', label: 'Santai (1-3 wisata)', color: 'bg-blue-100 text-blue-700' };
+                    } else if (count >= 4 && count <= 5) {
+                        return { level: 'normal', label: 'Normal (4-5 wisata)', color: 'bg-green-100 text-green-700' };
+                    } else {
+                        return { level: 'padat', label: 'Padat (5+ wisata)', color: 'bg-orange-100 text-orange-700' };
+                    }
+                }
+
+                // Update activity level display and hidden input
+                function updateActivityLevel() {
+                    const checked = checkboxes.filter(cb => cb.checked).length;
+                    const activity = getActivityLevel(checked);
+                    
+                    if (activityInput) {
+                        activityInput.value = activity.level;
+                    }
+                    
+                    if (activityDisplay) {
+                        activityDisplay.textContent = activity.label;
+                        activityDisplay.className = `px-3 py-2 ${activity.color} rounded-lg text-sm font-medium`;
+                    }
+                }
 
                 // Update count display
                 function updateCount() {
@@ -352,46 +354,12 @@
                         });
                 }
 
-                // Validate selection based on activity level
-                function validateSelection() {
-                    const activity = activitySelect.value;
-                    const limits = activityLimits[activity];
-                    const checked = checkboxes.filter(c => c.checked);
-
-                    if (checked.length > limits.max) {
-                        // Uncheck excess
-                        checked.slice(limits.max).forEach(cb => {
-                            cb.checked = false;
-                        });
-                        alert(`Untuk aktivitas ${activity}, maksimal ${limits.max} wisata per hari.`);
-                    }
-                    updateCount();
-                    updateSelectedList();
-                }
-
-                // Activity selector change
-                if (activitySelect) {
-                    activitySelect.addEventListener('change', function() {
-                        validateSelection();
-                    });
-                }
-
                 // Checkbox change
                 checkboxes.forEach(cb => {
                     cb.addEventListener('change', function() {
-                        const activity = activitySelect.value;
-                        const limits = activityLimits[activity];
-                        const checked = checkboxes.filter(c => c.checked);
-
-                        if (this.checked && checked.length > limits.max) {
-                            this.checked = false;
-                            alert(
-                                `Untuk aktivitas ${activity}, maksimal ${limits.max} wisata per hari.`
-                            );
-                            return;
-                        }
                         updateCount();
                         updateSelectedList();
+                        updateActivityLevel();
                     });
                 });
 
@@ -426,42 +394,34 @@
                     });
                 }
 
-                // Initial count and list
+                // Initial count, list, and activity level
                 updateCount();
                 updateSelectedList();
+                updateActivityLevel();
             }
 
             // Form validation
             form.addEventListener('submit', function(e) {
-                let hasError = false;
-                let errorMessage = '';
-
+                // Update activity levels before submit
                 for (let day = 1; day <= durationDays; day++) {
-                    const activitySelect = document.getElementById(`activity_level_day_${day}`);
                     const checkboxes = Array.from(document.querySelectorAll(
                         `.place-checkbox-day-${day}:checked`));
-                    const activity = activitySelect.value;
-                    const limits = activityLimits[activity];
+                    const activityInput = document.getElementById(`activity_level_day_${day}`);
                     const count = checkboxes.length;
-
-                    if (count < limits.min) {
-                        hasError = true;
-                        errorMessage =
-                            `Hari ${day}: Untuk aktivitas ${activity}, minimal ${limits.min} wisata harus dipilih.`;
-                        break;
+                    
+                    // Determine activity level
+                    let activityLevel = '';
+                    if (count >= 1 && count <= 3) {
+                        activityLevel = 'santai';
+                    } else if (count >= 4 && count <= 5) {
+                        activityLevel = 'normal';
+                    } else if (count > 5) {
+                        activityLevel = 'padat';
                     }
-                    if (count > limits.max) {
-                        hasError = true;
-                        errorMessage =
-                            `Hari ${day}: Untuk aktivitas ${activity}, maksimal ${limits.max} wisata.`;
-                        break;
+                    
+                    if (activityInput) {
+                        activityInput.value = activityLevel;
                     }
-                }
-
-                if (hasError) {
-                    e.preventDefault();
-                    alert(errorMessage);
-                    return false;
                 }
 
                 // Check if at least one day has places

@@ -36,11 +36,6 @@ class PlaceCategoryHelper
                 'name' => 'Hiburan & Lifestyle',
                 'emoji' => '🛍️',
             ],
-            [
-                'slug' => 'aktivitas-event',
-                'name' => 'Aktivitas & Event',
-                'emoji' => '🚴',
-            ],
         ];
     }
 

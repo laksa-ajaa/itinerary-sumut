@@ -187,8 +187,6 @@
                                         @endphp
                                         <div class="flex items-start gap-3 p-3 rounded-lg text-sm
                                         @if ($type == 'place' || $type == 'wisata') bg-green-50 border-l-4 border-green-500
-                                        @elseif($type == 'meal') bg-yellow-50 border-l-4 border-yellow-500
-                                        @elseif($type == 'hotel' || $type == 'lodging') bg-blue-50 border-l-4 border-blue-500
                                         @elseif($type == 'travel') bg-gray-50 border-l-4 border-gray-400
                                         @else bg-gray-100 border-l-4 border-gray-300 @endif"
                                             data-day="{{ $day['day'] }}"
@@ -200,7 +198,7 @@
                                                 data-start-time="{{ $activity['start_time'] ?? '' }}"
                                                 data-end-time="{{ $activity['end_time'] ?? '' }}"
                                                 data-travel-duration="{{ $activity['duration_minutes'] ?? 0 }}" @endif
-                                            @if ($type === 'place' || $type === 'meal' || $type === 'hotel' || $type === 'lodging') data-activity-start-time="{{ $activity['start_time'] ?? '' }}"
+                                            @if ($type === 'place') data-activity-start-time="{{ $activity['start_time'] ?? '' }}"
                                                 data-activity-end-time="{{ $activity['end_time'] ?? '' }}"
                                                 data-activity-duration="{{ $activity['duration_minutes'] ?? 0 }}" @endif>
 
@@ -224,32 +222,11 @@
                                                     <p class="text-gray-600 text-xs line-clamp-2">{{ $location }}</p>
                                                 @endif
 
-                                                {{-- Restaurant info for lunch --}}
-                                                @if ($type == 'meal' && $activity['meal_type'] == 'lunch' && !empty($activity['restaurant']))
-                                                    <div class="mt-1 p-2 bg-yellow-100 rounded">
-                                                        <p class="text-xs font-medium text-yellow-800">
-                                                            🍽️ {{ $activity['restaurant']['name'] }}
-                                                        </p>
-                                                        @if (!empty($activity['restaurant']['rating_avg']))
-                                                            <p class="text-xs text-yellow-700">
-                                                                ⭐
-                                                                {{ number_format($activity['restaurant']['rating_avg'], 1) }}
-                                                            </p>
-                                                        @endif
-                                                    </div>
-                                                @endif
-
                                                 {{-- Icon based on type --}}
                                                 <div class="mt-2 flex items-center gap-2 text-xs">
                                                     @if ($type == 'place' || $type == 'wisata')
                                                         <span class="text-green-600">📍</span>
                                                         <span class="text-gray-500">Tempat Wisata</span>
-                                                    @elseif($type == 'meal')
-                                                        <span class="text-yellow-600">🍴</span>
-                                                        <span class="text-gray-500">Makan</span>
-                                                    @elseif($type == 'hotel' || $type == 'lodging')
-                                                        <span class="text-blue-600">🏨</span>
-                                                        <span class="text-gray-500">Penginapan</span>
                                                     @elseif($type == 'travel')
                                                         <span class="text-gray-600">🚗</span>
                                                         <span class="text-gray-500">
