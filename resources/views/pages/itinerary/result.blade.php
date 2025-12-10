@@ -148,7 +148,8 @@
                                                 </div>
                                             </div>
                                             <div class="flex-1">
-                                                <h4 class="font-semibold text-gray-900 text-sm mb-1">📍 {{ $displayName }}</h4>
+                                                <h4 class="font-semibold text-gray-900 text-sm mb-1">📍 {{ $displayName }}
+                                                </h4>
                                                 <p class="text-gray-600 text-xs">
                                                     {{ $day['start_point']['lat'] }}, {{ $day['start_point']['lng'] }}
                                                 </p>
@@ -334,6 +335,14 @@
                 <strong>Catatan:</strong> Itinerary ini dibuat berdasarkan preferensi dan tempat yang Anda pilih.
                 Waktu perjalanan dan durasi kunjungan adalah estimasi. Silakan sesuaikan sesuai kebutuhan Anda.
             </p>
+            @if (!auth()->check())
+                <p class="text-blue-800 text-sm mt-2">
+                    <strong>💡 Info:</strong> Itinerary ini tidak akan tersimpan.
+                    <a href="{{ route('login') }}" class="underline font-semibold">Login</a> atau
+                    <a href="{{ route('register') }}" class="underline font-semibold">Daftar</a>
+                    untuk menyimpan itinerary Anda.
+                </p>
+            @endif
         </div>
     </div>
 
