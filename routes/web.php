@@ -12,6 +12,10 @@ use App\Http\Controllers\PlaceController;
 use App\Http\Controllers\MapController;
 use App\Http\Controllers\ItineraryController;
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\Admin\AdminDashboardController;
+use App\Http\Controllers\Admin\AnalyticsController as AdminAnalyticsController;
+use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\Admin\WisataController;
 
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
@@ -31,9 +35,9 @@ Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 // Dashboard Route
 Route::get('/dashboard', function () {
     $placesCount = Place::count();
-    $restaurantsCount = Place::where('kind', 'restaurant')->count();
-    $attractionsCount = Place::where('kind', 'attraction')->count();
-    $lodgingCount = Place::where('kind', 'lodging')->count();
+    $restaurantsCount = Place::whereIn('kind', ['restaurant', 'restoran'])->count();
+    $attractionsCount = Place::whereIn('kind', ['attraction', 'wisata'])->count();
+    $lodgingCount = Place::whereIn('kind', ['lodging', 'penginapan'])->count();
 
     $recentPlaces = Place::with(['categories:id,name'])
         ->orderBy('created_at', 'desc')
@@ -63,7 +67,7 @@ Route::get('/dashboard', function () {
         // Service might not be available
     }
 
-    return view('dashboard', [
+    return view('pages.dashboard.dashboard', [
         'placesCount' => $placesCount,
         'restaurantsCount' => $restaurantsCount,
         'attractionsCount' => $attractionsCount,
@@ -73,6 +77,21 @@ Route::get('/dashboard', function () {
         'recommendations' => $recommendations,
     ]);
 })->name('dashboard')->middleware('auth');
+
+// Admin area
+Route::prefix('admin')->name('admin.')->middleware(['auth', 'admin'])->group(function () {
+    Route::get('/', [AdminDashboardController::class, 'index'])->name('dashboard');
+    Route::get('/analytics', [AdminAnalyticsController::class, 'index'])->name('analytics');
+
+    Route::get('/wisata', [WisataController::class, 'index'])->name('wisata.index');
+    Route::post('/wisata', [WisataController::class, 'store'])->name('wisata.store');
+    Route::post('/wisata/import', [WisataController::class, 'import'])->name('wisata.import');
+
+    Route::get('/users', [UserManagementController::class, 'index'])->name('users.index');
+    Route::post('/users/{user}/make-admin', [UserManagementController::class, 'makeAdmin'])->name('users.make-admin');
+    Route::post('/users/{user}/revoke-admin', [UserManagementController::class, 'revokeAdmin'])->name('users.revoke-admin');
+    Route::delete('/users/{user}', [UserManagementController::class, 'destroy'])->name('users.destroy');
+});
 
 // API ringan untuk demo (sementara), sebaiknya pindah ke routes/api.php saat diaktifkan Sanctum/Breeze
 Route::get('/api/places', [PlaceController::class, 'index']);

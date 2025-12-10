@@ -33,6 +33,12 @@
 
                 <div id="userMenu"
                     class="hidden absolute right-0 top-12 w-56 bg-white border border-gray-200 rounded-lg shadow-lg py-2 z-50">
+                    @if(Auth::user()->is_admin ?? false)
+                    <a href="{{ route('admin.dashboard') }}"
+                        class="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-50">
+                        <span>Admin Dashboard</span>
+                    </a>
+                    @endif
                     <a href="{{ route('dashboard') }}"
                         class="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-50">
                         <span>Profil</span>

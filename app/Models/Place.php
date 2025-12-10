@@ -23,17 +23,25 @@ class Place extends Model
         'latitude',
         'longitude',
         'rating',
+        'rating_avg',
         'rating_count',
         'city',
         'address',
         'tags',
+        'website',
+        'contact',
+        'opening_hours',
+        'facilities',
     ];
 
     protected $casts = [
         'tags' => 'array',
+        'opening_hours' => 'array',
+        'facilities' => 'array',
         'latitude' => 'float',
         'longitude' => 'float',
         'rating' => 'float',
+        'rating_avg' => 'float',
         'rating_count' => 'integer',
     ];
 

@@ -27,10 +27,16 @@ class Accommodation extends Model
         'city',
         'address',
         'tags',
+        'website',
+        'contact',
+        'opening_hours',
+        'facilities',
     ];
 
     protected $casts = [
         'tags' => 'array',
+        'opening_hours' => 'array',
+        'facilities' => 'array',
         'latitude' => 'float',
         'longitude' => 'float',
         'rating' => 'float',
@@ -38,5 +44,3 @@ class Accommodation extends Model
         'rating_count' => 'integer',
     ];
 }
-
-
