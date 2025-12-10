@@ -105,10 +105,13 @@
 
             {{-- Action Buttons (Top) --}}
             <div class="flex justify-between gap-4 mb-6">
-                <a href="{{ route('itinerary.preferences') }}"
-                    class="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">
-                    ← Kembali
-                </a>
+                <button type="button" onclick="goBack()"
+                    class="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                    Kembali
+                </button>
             </div>
 
             {{-- Info Box --}}
@@ -270,14 +273,20 @@
 
             {{-- Action Buttons --}}
             <div class="flex justify-between gap-4 mt-8">
-                <a href="{{ route('itinerary.preferences') }}"
-                    class="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">
-                    ← Kembali
-                </a>
+                <button type="button" onclick="goBack()"
+                    class="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                    Kembali
+                </button>
                 @if ($places->count() > 0 || (isset($recommendedPlaces) && $recommendedPlaces->count() > 0))
                     <button type="submit"
-                        class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold">
-                        Lanjutkan →
+                        class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold flex items-center gap-2">
+                        Lanjutkan
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                        </svg>
                     </button>
                 @endif
             </div>
@@ -285,6 +294,18 @@
     </div>
 
     <script>
+        // Smart back navigation function
+        function goBack() {
+            // Check if there's history to go back to
+            if (window.history.length > 1) {
+                // Try to go back in browser history
+                window.history.back();
+            } else {
+                // Fallback to preferences page if no history
+                window.location.href = '{{ route('itinerary.preferences') }}';
+            }
+        }
+
         (function() {
             const form = document.getElementById('placesForm');
             const durationDays = {{ $durationDays ?? 1 }};

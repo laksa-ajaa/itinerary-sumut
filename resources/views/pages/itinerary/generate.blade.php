@@ -235,11 +235,13 @@
 
             {{-- Action Buttons --}}
             <div class="flex justify-between gap-4 mt-8">
-                <a href="{{ route('itinerary.places') }}"
-                    onclick="event.preventDefault(); document.getElementById('backForm').submit();"
-                    class="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition">
-                    ← Kembali
-                </a>
+                <button type="button" onclick="goBack()"
+                    class="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                    Kembali
+                </button>
                 <form id="backForm" action="{{ route('itinerary.places') }}" method="POST" class="hidden">
                     @csrf
                     @foreach ($categorySlugs as $categorySlug)
@@ -247,9 +249,12 @@
                     @endforeach
                 </form>
                 <button type="submit" id="generateBtn"
-                    class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold">
-                    <span id="btnText">Generate Itinerary →</span>
+                    class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold flex items-center gap-2">
+                    <span id="btnText">Generate Itinerary</span>
                     <span id="btnLoading" class="hidden">Memproses...</span>
+                    <svg id="btnIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                    </svg>
                 </button>
             </div>
         </form>
@@ -270,14 +275,28 @@
         integrity="sha256-o9N1j7kGStpU1Qf0NenE2no0LYgR5p3pUVi6drwQP3s=" crossorigin=""></script>
 
     <script>
+        // Smart back navigation function
+        function goBack() {
+            // Check if there's history to go back to
+            if (window.history.length > 1) {
+                // Try to go back in browser history
+                window.history.back();
+            } else {
+                // Fallback: submit backForm to preserve data
+                document.getElementById('backForm').submit();
+            }
+        }
+
         // Show loading state on form submit
         document.getElementById('generateForm').addEventListener('submit', function() {
             const btn = document.getElementById('generateBtn');
             const btnText = document.getElementById('btnText');
             const btnLoading = document.getElementById('btnLoading');
+            const btnIcon = document.getElementById('btnIcon');
 
             btn.disabled = true;
             btnText.classList.add('hidden');
+            btnIcon.classList.add('hidden');
             btnLoading.classList.remove('hidden');
         });
 
