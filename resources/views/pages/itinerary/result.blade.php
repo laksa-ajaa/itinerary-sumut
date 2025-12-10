@@ -134,6 +134,12 @@
                                 <div class="space-y-3">
                                     {{-- Show start location first if available --}}
                                     @if (!empty($day['start_point']))
+                                        @php
+                                            $startPoint = $day['start_point'];
+                                            $isHotel = !empty($startPoint['is_hotel']) && $startPoint['is_hotel'];
+                                            $startName = $startPoint['name'] ?? 'Lokasi Awal';
+                                            $displayName = $isHotel ? "Lokasi Awal ({$startName})" : $startName;
+                                        @endphp
                                         <div
                                             class="flex items-start gap-3 p-3 rounded-lg bg-gray-50 border-l-4 border-gray-400">
                                             <div class="flex-shrink-0">
@@ -142,7 +148,7 @@
                                                 </div>
                                             </div>
                                             <div class="flex-1">
-                                                <h4 class="font-semibold text-gray-900 text-sm mb-1">📍 Lokasi Awal</h4>
+                                                <h4 class="font-semibold text-gray-900 text-sm mb-1">📍 {{ $displayName }}</h4>
                                                 <p class="text-gray-600 text-xs">
                                                     {{ $day['start_point']['lat'] }}, {{ $day['start_point']['lng'] }}
                                                 </p>

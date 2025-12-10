@@ -246,8 +246,13 @@ class ItineraryController extends Controller
                 $this->saveItineraryToDatabase($userId, $itinerary, $validated);
             }
             return view('pages.itinerary.result', compact('itinerary'));
-        } catch (\Exception $e) {
-            Log::error('Itinerary generation failed: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('Itinerary generation failed: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $validated
+            ]);
 
             return redirect()->back()
                 ->withInput()
@@ -481,10 +486,12 @@ class ItineraryController extends Controller
                     $itemId = null;
                     if ($itemType === 'place') {
                         $itemId = $scheduleItem['place_id'] ?? $scheduleItem['id'] ?? null;
+                    } elseif ($itemType === 'accommodation') {
+                        $itemId = $scheduleItem['accommodation_id'] ?? $scheduleItem['id'] ?? null;
                     }
 
-                    // Only save places (skip travel items, meals, hotels, and items without ID)
-                    if ($itemType === 'place' && $itemId) {
+                    // Save places and accommodations (skip travel items, meals, and items without ID)
+                    if (($itemType === 'place' || $itemType === 'accommodation') && $itemId) {
                         ItineraryItem::create([
                             'itinerary_id' => $savedItinerary->id,
                             'day' => $day,
@@ -518,12 +525,16 @@ class ItineraryController extends Controller
     {
         $type = $scheduleItem['type'] ?? 'place';
 
-        // Only return 'place' for place type, ignore meals, hotels, and travel
+        // Return appropriate type for place and accommodation
         if ($type === 'place') {
             return 'place';
         }
 
-        return 'other'; // For travel, meal, hotel, etc.
+        if ($type === 'hotel') {
+            return 'accommodation';
+        }
+
+        return 'other'; // For travel, meal, etc.
     }
     /**
      * Show saved itineraries

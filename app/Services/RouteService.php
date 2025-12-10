@@ -32,7 +32,7 @@ class RouteService
         $lat2 = (float) $lat2;
         $lng2 = (float) $lng2;
 
-        $distanceKm = $this->calculateHaversineDistance($lat1, $lng1, $lat2, $lng2);
+        $distanceKm = (float) $this->calculateHaversineDistance($lat1, $lng1, $lat2, $lng2);
 
         // Estimate duration based on distance
         // Use realistic speeds: 30 km/h in city, 60 km/h on highway
@@ -66,8 +66,8 @@ class RouteService
         $optimized = [];
         $remaining = $places;
         $current = $startPoint ?? [
-            'lat' => $places[0]['latitude'] ?? $places[0]['lat'],
-            'lng' => $places[0]['longitude'] ?? $places[0]['lng'],
+            'lat' => (float) ($places[0]['latitude'] ?? $places[0]['lat']),
+            'lng' => (float) ($places[0]['longitude'] ?? $places[0]['lng']),
         ];
 
         while (!empty($remaining)) {
@@ -76,13 +76,13 @@ class RouteService
             $nearestIndex = null;
 
             foreach ($remaining as $index => $place) {
-                $placeLat = $place['latitude'] ?? $place['lat'];
-                $placeLng = $place['longitude'] ?? $place['lng'];
+                $placeLat = (float) ($place['latitude'] ?? $place['lat']);
+                $placeLng = (float) ($place['longitude'] ?? $place['lng']);
 
                 // Use Haversine for optimization
                 $distance = $this->calculateHaversineDistance(
-                    $current['lat'],
-                    $current['lng'],
+                    (float) $current['lat'],
+                    (float) $current['lng'],
                     $placeLat,
                     $placeLng
                 );
@@ -97,8 +97,8 @@ class RouteService
             if ($nearest) {
                 $optimized[] = $nearest;
                 $current = [
-                    'lat' => $nearest['latitude'] ?? $nearest['lat'],
-                    'lng' => $nearest['longitude'] ?? $nearest['lng'],
+                    'lat' => (float) ($nearest['latitude'] ?? $nearest['lat']),
+                    'lng' => (float) ($nearest['longitude'] ?? $nearest['lng']),
                 ];
                 unset($remaining[$nearestIndex]);
                 $remaining = array_values($remaining);
@@ -157,9 +157,9 @@ class RouteService
             return 0;
         }
 
-        $total = 0;
+        $total = 0.0;
         for ($i = 1; $i < count($coordinates); $i++) {
-            $total += $this->calculateHaversineDistance(
+            $total += (float) $this->calculateHaversineDistance(
                 $coordinates[$i - 1]['lat'],
                 $coordinates[$i - 1]['lng'],
                 $coordinates[$i]['lat'],

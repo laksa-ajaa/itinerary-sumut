@@ -31,6 +31,11 @@ class Accommodation extends Model
 
     protected $casts = [
         'tags' => 'array',
+        'latitude' => 'float',
+        'longitude' => 'float',
+        'rating' => 'float',
+        'rating_avg' => 'float',
+        'rating_count' => 'integer',
     ];
 }
 

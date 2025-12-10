@@ -31,6 +31,10 @@ class Place extends Model
 
     protected $casts = [
         'tags' => 'array',
+        'latitude' => 'float',
+        'longitude' => 'float',
+        'rating' => 'float',
+        'rating_count' => 'integer',
     ];
 
     public function categories()

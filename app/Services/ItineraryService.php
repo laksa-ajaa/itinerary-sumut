@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Place;
+use App\Models\Accommodation;
 use App\Services\RouteService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -70,14 +71,37 @@ class ItineraryService
         $startDateTime = $startDate->copy()->setTime((int)$startHour, (int)$startMinute);
 
         // Build daily itinerary
-        $dailyPlans = $this->buildDailyItinerary(
-            $placesByDay,
-            $activityLevels,
-            $allPlaces,
-            $durationDays,
-            $startPoint,
-            $startDateTime
-        );
+        try {
+            $dailyPlans = $this->buildDailyItinerary(
+                $placesByDay,
+                $activityLevels,
+                $allPlaces,
+                $durationDays,
+                $startPoint,
+                $startDateTime
+            );
+        } catch (\Throwable $e) {
+            Log::error('buildDailyItinerary failed: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'places_count' => count($allPlaceIds),
+                'start_point' => $startPoint,
+                'error_trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
+
+        try {
+            $summary = $this->generateSummary($dailyPlans);
+        } catch (\Throwable $e) {
+            Log::error('generateSummary failed: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'daily_plans_count' => count($dailyPlans),
+                'error_trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
 
         return [
             'metadata' => [
@@ -91,7 +115,7 @@ class ItineraryService
                 'start_location' => $startLocation,
             ],
             'daily_plans' => $dailyPlans,
-            'summary' => $this->generateSummary($dailyPlans),
+            'summary' => $summary,
         ];
     }
 
@@ -120,6 +144,7 @@ class ItineraryService
         Carbon $startDateTime
     ): array {
         $dailyPlans = [];
+        $previousDayHotel = null; // Track hotel from previous day
 
         for ($day = 1; $day <= $durationDays; $day++) {
             $dayKey = (string)$day;
@@ -144,8 +169,8 @@ class ItineraryService
                 $currentDate = $startDateTime->copy()->addDays($day - 1)->setTime(8, 0);
             }
 
-            // Determine starting point for this day
-            $currentStartPoint = $this->getDayStartPoint($day, $startPoint, $dailyPlans);
+            // Determine starting point for this day (use hotel from previous day if available)
+            $currentStartPoint = $this->getDayStartPoint($day, $startPoint, $dailyPlans, $previousDayHotel);
 
             Log::info("Processing day {$day}", [
                 'current_start_point' => $currentStartPoint,
@@ -163,14 +188,18 @@ class ItineraryService
             // For day 1, use startDateTime; for other days, use 8:00 AM
             $isLastDay = ($day === $durationDays);
 
-            $schedule = $this->buildDailySchedule(
+            $scheduleResult = $this->buildDailySchedule(
                 $optimizedRoute,
                 $currentDate,
                 $routeGeometry,
                 $currentStartPoint,
                 $startPoint, // Original start point (home)
-                $isLastDay
+                $isLastDay,
+                $previousDayHotel
             );
+
+            $schedule = $scheduleResult['schedule'];
+            $recommendedHotel = $scheduleResult['recommended_hotel'];
 
             $dailyPlans[] = [
                 'day' => $day,
@@ -181,12 +210,16 @@ class ItineraryService
                 'places' => $schedule,
                 'route_geometry' => $routeGeometry,
                 'activity_level' => $activityLevels[$dayKey] ?? 'normal',
+                'recommended_hotel' => $recommendedHotel,
                 'stats' => [
                     'total_places' => count(array_filter($schedule, fn($s) => $s['type'] === 'place')),
                     'total_distance' => $routeGeometry['distance_km'] ?? 0,
                     'estimated_cost' => $this->estimateDailyCost($schedule),
                 ]
             ];
+
+            // Set hotel for next day
+            $previousDayHotel = $recommendedHotel;
         }
 
         return $dailyPlans;
@@ -194,11 +227,52 @@ class ItineraryService
 
     /**
      * Get starting point for a specific day
-     * Always starts from initial start point
+     *
+     * Priority:
+     *  1. Hotel from previous day (if any)
+     *  2. Last known recommended_hotel in previous daily plans (fallback)
+     *  3. Initial start point
      */
-    private function getDayStartPoint(int $day, ?array $initialStart, array $dailyPlans): ?array
+    private function getDayStartPoint(int $day, ?array $initialStart, array $dailyPlans, ?array $previousDayHotel = null): ?array
     {
-        // Always start from initial start point
+        // 1) If there's an explicit hotel from previous day, use it
+        if ($previousDayHotel && !empty($previousDayHotel['latitude']) && !empty($previousDayHotel['longitude'])) {
+            return [
+                'lat' => (float) $previousDayHotel['latitude'],
+                'lng' => (float) $previousDayHotel['longitude'],
+                'name' => $previousDayHotel['name'] ?? 'Hotel',
+                'is_hotel' => true,
+            ];
+        }
+
+        // 2) Fallback: scan previous daily plans for the last recommended_hotel
+        if (!empty($dailyPlans)) {
+            // Iterate from last plan backwards
+            for ($i = count($dailyPlans) - 1; $i >= 0; $i--) {
+                $plan = $dailyPlans[$i] ?? null;
+                if (!$plan || empty($plan['recommended_hotel'])) {
+                    continue;
+                }
+
+                $hotel = $plan['recommended_hotel'];
+                if (!empty($hotel['latitude']) && !empty($hotel['longitude'])) {
+                    return [
+                        'lat' => (float) $hotel['latitude'],
+                        'lng' => (float) $hotel['longitude'],
+                        'name' => $hotel['name'] ?? 'Hotel',
+                        'is_hotel' => true,
+                    ];
+                }
+            }
+        }
+
+        // 3) Default: use initial start point (home)
+        if ($initialStart) {
+            return array_merge($initialStart, [
+                'name' => 'Lokasi Awal',
+                'is_hotel' => false,
+            ]);
+        }
         return $initialStart;
     }
 
@@ -237,11 +311,12 @@ class ItineraryService
         $totalDistance = $this->routeService->calculateTotalDistance($coordinates);
 
         // Estimate duration: 30 km/h average speed
+        $totalDistance = (float) $totalDistance;
         $durationMinutes = ($totalDistance / 30) * 60;
 
         // Create simple LineString geometry for map (straight lines)
         // Frontend Leaflet Routing Machine will show actual route
-        $lineCoordinates = array_map(fn($c) => [$c['lng'], $c['lat']], $coordinates);
+        $lineCoordinates = array_map(fn($c) => [(float)$c['lng'], (float)$c['lat']], $coordinates);
 
         return [
             'geometry' => [
@@ -249,7 +324,7 @@ class ItineraryService
                 'coordinates' => $lineCoordinates
             ],
             'distance_km' => round($totalDistance, 2),
-            'duration_minutes' => round($durationMinutes, 1),
+            'duration_minutes' => round((float)$durationMinutes, 1),
         ];
     }
 
@@ -271,7 +346,7 @@ class ItineraryService
         // If no start point, use first place
         if (!$currentPoint && $remainingPlaces->isNotEmpty()) {
             $firstPlace = $remainingPlaces->first();
-            $currentPoint = ['lat' => $firstPlace->latitude, 'lng' => $firstPlace->longitude];
+            $currentPoint = ['lat' => (float) $firstPlace->latitude, 'lng' => (float) $firstPlace->longitude];
         }
 
         for ($i = 0; $i < $targetCount && $remainingPlaces->isNotEmpty(); $i++) {
@@ -280,7 +355,7 @@ class ItineraryService
             if ($nearest) {
                 $selected->push($nearest);
                 $remainingPlaces = $remainingPlaces->reject(fn($p) => $p->id === $nearest->id);
-                $currentPoint = ['lat' => $nearest->latitude, 'lng' => $nearest->longitude];
+                $currentPoint = ['lat' => (float) $nearest->latitude, 'lng' => (float) $nearest->longitude];
             }
         }
 
@@ -298,10 +373,10 @@ class ItineraryService
 
         return $places->map(function ($place) use ($point) {
             $place->temp_distance = $this->calculateDistance(
-                $point['lat'],
-                $point['lng'],
-                $place->latitude,
-                $place->longitude
+                (float) $point['lat'],
+                (float) $point['lng'],
+                (float) $place->latitude,
+                (float) $place->longitude
             );
             return $place;
         })->sortBy('temp_distance')->first();
@@ -363,7 +438,7 @@ class ItineraryService
             if ($nearest) {
                 $optimized->push($nearest);
                 $remaining = $remaining->reject(fn($p) => $p->id === $nearest->id);
-                $current = ['lat' => $nearest->latitude, 'lng' => $nearest->longitude];
+                $current = ['lat' => (float) $nearest->latitude, 'lng' => (float) $nearest->longitude];
             } else {
                 break;
             }
@@ -382,7 +457,8 @@ class ItineraryService
         }
 
         // Formula: MAX_VISIT * (1 / placeCount * 1.5)
-        $visitDuration = self::MAX_VISIT * (1 / $placeCount * 1.5);
+        $placeCountFloat = (float) $placeCount;
+        $visitDuration = (float) self::MAX_VISIT * (1 / $placeCountFloat * 1.5);
 
         // Clamp between MIN_VISIT and MAX_VISIT
         return max(self::MIN_VISIT, min((int)round($visitDuration), self::MAX_VISIT));
@@ -397,28 +473,31 @@ class ItineraryService
         array $routeGeometry,
         ?array $startPoint = null,
         ?array $originalStartPoint = null,
-        bool $isLastDay = false
+        bool $isLastDay = false,
+        ?array $previousDayHotel = null
     ): array {
         $schedule = [];
         // Use the time from $date (already set with start time for day 1, or 8:00 for other days)
         $currentTime = $date->copy();
 
         // Calculate dynamic visit duration based on place count
-        $placeCount = $places->count();
+        $placeCount = (int) $places->count();
         $visitDuration = $this->calculateVisitDuration($placeCount);
 
-        foreach ($places as $index => $place) {
+        // Track previous place explicitly (avoid relying on numeric indexes)
+        $previousPlace = null;
+
+        foreach ($places as $place) {
 
             // Add travel time from previous location as separate item
             $travelDuration = null;
-            if ($index > 0) {
-                $prevPlace = $places[$index - 1];
-                $travelInfo = $this->getTravelInfo($prevPlace, $place);
+            if ($previousPlace) {
+                $travelInfo = $this->getTravelInfo($previousPlace, $place);
                 $travelDuration = $travelInfo['duration_minutes'];
 
                 // Add travel as separate schedule item
                 $travelStartTime = $currentTime->copy();
-                $travelEndTime = $currentTime->copy()->addMinutes($travelDuration);
+                $travelEndTime = $currentTime->copy()->addMinutes((int) $travelDuration);
 
                 $schedule[] = [
                     'type' => 'travel',
@@ -427,31 +506,36 @@ class ItineraryService
                     'duration_minutes' => $travelDuration,
                     'distance_km' => $travelInfo['distance_km'],
                     'from' => [
-                        'name' => $prevPlace->name,
-                        'latitude' => $prevPlace->latitude,
-                        'longitude' => $prevPlace->longitude,
+                        'name' => $previousPlace->name,
+                        'latitude' => $previousPlace->latitude,
+                        'longitude' => $previousPlace->longitude,
                     ],
                     'to' => [
                         'name' => $place->name,
                         'latitude' => $place->latitude,
                         'longitude' => $place->longitude,
                     ],
-                    'description' => "Perjalanan dari {$prevPlace->name} ke {$place->name}",
+                    'description' => "Perjalanan dari {$previousPlace->name} ke {$place->name}",
                 ];
 
                 $currentTime = $travelEndTime;
-            } elseif ($index === 0 && $startPoint) {
+            } elseif ($previousPlace === null && $startPoint) {
                 // Travel from start point to first place using RouteService
                 $travelInfo = $this->routeService->getDistanceAndDuration(
-                    $startPoint['lat'],
-                    $startPoint['lng'],
-                    $place->latitude,
-                    $place->longitude
+                    (float) $startPoint['lat'],
+                    (float) $startPoint['lng'],
+                    (float) $place->latitude,
+                    (float) $place->longitude
                 );
                 $travelDuration = $travelInfo['duration_minutes'];
 
                 $travelStartTime = $currentTime->copy();
-                $travelEndTime = $currentTime->copy()->addMinutes($travelDuration);
+                $travelEndTime = $currentTime->copy()->addMinutes((int) $travelDuration);
+
+                // Get start point name (hotel name if from hotel, otherwise "Lokasi Awal")
+                $startPointName = $startPoint['name'] ?? 'Lokasi Awal';
+                $isHotelStart = !empty($startPoint['is_hotel']) && $startPoint['is_hotel'];
+                $fromName = $isHotelStart ? "Lokasi Awal ({$startPointName})" : $startPointName;
 
                 $schedule[] = [
                     'type' => 'travel',
@@ -460,7 +544,7 @@ class ItineraryService
                     'duration_minutes' => $travelDuration,
                     'distance_km' => $travelInfo['distance_km'],
                     'from' => [
-                        'name' => 'Lokasi Awal',
+                        'name' => $fromName,
                         'latitude' => $startPoint['lat'],
                         'longitude' => $startPoint['lng'],
                     ],
@@ -469,13 +553,13 @@ class ItineraryService
                         'latitude' => $place->latitude,
                         'longitude' => $place->longitude,
                     ],
-                    'description' => "Perjalanan dari lokasi awal ke {$place->name}",
+                    'description' => "Perjalanan dari {$fromName} ke {$place->name}",
                 ];
 
                 $currentTime = $travelEndTime;
             }
 
-            $endTime = $currentTime->copy()->addMinutes($visitDuration);
+            $endTime = $currentTime->copy()->addMinutes((int) $visitDuration);
 
             // No time limit - allow natural completion
             $schedule[] = [
@@ -494,20 +578,102 @@ class ItineraryService
             ];
 
             $currentTime = $endTime;
+
+            // Update previous place for next iteration
+            $previousPlace = $place;
         }
 
-        // Add return trip logic
-        // Last day: ALWAYS return to home, regardless of distance
-        // Other days: Always return to home
+        // Check if hotel recommendation is needed and determine return destination
+        $recommendedHotel = null;
+        $needsReturnTrip = false;
+        $returnDestination = null;
+
         if ($places->isNotEmpty() && $originalStartPoint) {
             $lastPlace = $places->last();
-
-            // Calculate distance to home using RouteService
-            $returnTravelInfo = $this->routeService->getDistanceAndDuration(
+            $distanceToHome = $this->calculateDistance(
                 $lastPlace->latitude,
                 $lastPlace->longitude,
                 $originalStartPoint['lat'],
                 $originalStartPoint['lng']
+            );
+
+            // If distance > 50km and not last day, recommend hotel
+            if ($distanceToHome > 50 && !$isLastDay) {
+                $recommendedHotel = $this->findNearestAccommodation(
+                    $lastPlace->latitude,
+                    $lastPlace->longitude,
+                    10 // Max 10km radius for hotel search
+                );
+
+                if ($recommendedHotel) {
+                    // Add travel from last place to hotel
+                    $hotelTravelInfo = $this->routeService->getDistanceAndDuration(
+                        $lastPlace->latitude,
+                        $lastPlace->longitude,
+                        $recommendedHotel->latitude,
+                        $recommendedHotel->longitude
+                    );
+
+                    $hotelTravelStartTime = $currentTime->copy();
+                    $hotelTravelEndTime = $currentTime->copy()->addMinutes($hotelTravelInfo['duration_minutes']);
+
+                    $schedule[] = [
+                        'type' => 'travel',
+                        'start_time' => $hotelTravelStartTime->format('H:i'),
+                        'end_time' => $hotelTravelEndTime->format('H:i'),
+                        'duration_minutes' => $hotelTravelInfo['duration_minutes'],
+                        'distance_km' => round($hotelTravelInfo['distance_km'], 2),
+                        'from' => [
+                            'name' => $lastPlace->name,
+                            'latitude' => $lastPlace->latitude,
+                            'longitude' => $lastPlace->longitude,
+                        ],
+                        'to' => [
+                            'name' => $recommendedHotel->name,
+                            'latitude' => $recommendedHotel->latitude,
+                            'longitude' => $recommendedHotel->longitude,
+                        ],
+                        'description' => "Perjalanan ke penginapan {$recommendedHotel->name}",
+                    ];
+
+                    $currentTime = $hotelTravelEndTime;
+
+                    // Add hotel recommendation to schedule
+                    $schedule[] = [
+                        'type' => 'hotel',
+                        'accommodation_id' => $recommendedHotel->id,
+                        'name' => $recommendedHotel->name,
+                        'kind' => $recommendedHotel->kind,
+                        'latitude' => $recommendedHotel->latitude,
+                        'longitude' => $recommendedHotel->longitude,
+                        'rating_avg' => $recommendedHotel->rating_avg ?? 0,
+                        'address' => $recommendedHotel->address,
+                        'description' => "Tiba di {$recommendedHotel->name}",
+                        'distance_to_last_destination' => $this->calculateDistance(
+                            $lastPlace->latitude,
+                            $lastPlace->longitude,
+                            $recommendedHotel->latitude,
+                            $recommendedHotel->longitude
+                        ),
+                    ];
+                }
+            } else {
+                // No hotel needed (last day or distance <= 50km), return to home
+                $needsReturnTrip = true;
+                $returnDestination = $originalStartPoint;
+            }
+        }
+
+        // Add return trip if needed (only for last day or when no hotel is recommended)
+        if ($needsReturnTrip && $places->isNotEmpty() && $returnDestination) {
+            $lastPlace = $places->last();
+
+            // Calculate distance to return destination using RouteService
+            $returnTravelInfo = $this->routeService->getDistanceAndDuration(
+                $lastPlace->latitude,
+                $lastPlace->longitude,
+                $returnDestination['lat'],
+                $returnDestination['lng']
             );
 
             // Get duration from RouteService
@@ -530,15 +696,25 @@ class ItineraryService
                 ],
                 'to' => [
                     'name' => 'Lokasi Awal',
-                    'latitude' => $originalStartPoint['lat'],
-                    'longitude' => $originalStartPoint['lng'],
+                    'latitude' => $returnDestination['lat'],
+                    'longitude' => $returnDestination['lng'],
                 ],
                 'description' => 'Pulang ke lokasi awal',
                 'is_return' => true, // Flag to identify return trip
             ];
         }
 
-        return $schedule;
+        return [
+            'schedule' => $schedule,
+            'recommended_hotel' => $recommendedHotel ? [
+                'id' => $recommendedHotel->id,
+                'name' => $recommendedHotel->name,
+                'latitude' => $recommendedHotel->latitude,
+                'longitude' => $recommendedHotel->longitude,
+                'rating_avg' => $recommendedHotel->rating_avg,
+                'address' => $recommendedHotel->address,
+            ] : null
+        ];
     }
 
     /**
@@ -589,6 +765,27 @@ class ItineraryService
         return $earthRadius * $c;
     }
 
+    /**
+     * Find nearest accommodation to a location within specified radius
+     */
+    private function findNearestAccommodation(float $lat, float $lng, int $maxDistanceKm = 10): ?Accommodation
+    {
+        $accommodations = Accommodation::whereNotNull('latitude')
+            ->whereNotNull('longitude')
+            ->get()
+            ->filter(function ($accommodation) use ($lat, $lng, $maxDistanceKm) {
+                $distance = $this->calculateDistance($lat, $lng, $accommodation->latitude, $accommodation->longitude);
+                return $distance <= $maxDistanceKm;
+            })
+            ->map(function ($accommodation) use ($lat, $lng) {
+                $accommodation->temp_distance = $this->calculateDistance($lat, $lng, $accommodation->latitude, $accommodation->longitude);
+                return $accommodation;
+            })
+            ->sortBy('temp_distance')
+            ->first();
+
+        return $accommodations;
+    }
 
     /**
      * Estimate daily cost
@@ -599,8 +796,9 @@ class ItineraryService
 
         foreach ($schedule as $item) {
             if ($item['type'] === 'place') {
-                $total += $item['price'] ?? 0;
+                $total += (int) ($item['price'] ?? 0);
             }
+            // Note: Hotel costs are not included as they vary and depend on user choice
         }
 
         return $total;
@@ -612,13 +810,13 @@ class ItineraryService
     private function generateSummary(array $dailyPlans): array
     {
         $totalPlaces = 0;
-        $totalDistance = 0;
+        $totalDistance = 0.0;
         $totalCost = 0;
 
         foreach ($dailyPlans as $plan) {
-            $totalPlaces += $plan['stats']['total_places'];
-            $totalDistance += $plan['stats']['total_distance'];
-            $totalCost += $plan['stats']['estimated_cost'];
+            $totalPlaces += (int) ($plan['stats']['total_places'] ?? 0);
+            $totalDistance += (float) ($plan['stats']['total_distance'] ?? 0);
+            $totalCost += (int) ($plan['stats']['estimated_cost'] ?? 0);
         }
 
         return [
